@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Till - Privacy</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { margin: 0; font-family: system-ui, "Segoe UI", Roboto, sans-serif; background: #fdf4f5; color: #1e1b1c; line-height: 1.55; }
+      @media (prefers-color-scheme: dark) { body { background: #120a0e; color: #f1e9ec; } a { color: #f293b1; } }
+      main { max-width: 40rem; margin: 0 auto; padding: 2rem 16px; }
+      h1 { color: #c93766; }
+      a { color: #a62a53; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Till - privacy</h1>
+      <p>Till is a personal till app. It has no server and no analytics, and it does not share data with anyone.</p>
+      <h2>What it stores</h2>
+      <p>Sales, daily totals and quick items are stored in your browser on the device you use the till on.</p>
+      <h2>Google Drive</h2>
+      <p>
+        If you choose to connect a Google account, Till asks for the <code>drive.file</code> permission only. This lets it
+        create and update its own files - a "Till records" folder holding a Google Sheet for each closed day and a backup
+        file - and nothing else in your Drive. Till cannot see or change any other file.
+      </p>
+      <p>
+        The sign-in token stays in your browser and is sent only to Google. You can disconnect at any time in the till's
+        Settings, or remove access at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+        Files Till has created stay in your Drive until you delete them.
+      </p>
+      <p><a href="./">Open the till</a></p>
+    </main>
+  </body>
+</html>
