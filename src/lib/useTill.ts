@@ -1,22 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyCard,
   applyCash,
-  closeDay,
   dayToCsv,
   localDate,
-  newDay,
   newId,
   remaining,
-  sumTotals,
-  totalsForDate,
-  type DayTotals,
+  tradingDate,
   type ClosedDay,
-  type Day,
   type Payment,
   type QuickItem,
   type SaleLine,
 } from './model';
+import {
+  closedDays,
+  emptyShared,
+  fingerprint,
+  fromLegacy,
+  mergeShared,
+  normalize,
+  openDay,
+  type DayRecord,
+  type SharedData,
+} from './shared';
 import * as drive from './googleDrive';
 
 export interface CurrentSale {
@@ -30,50 +36,35 @@ interface OutboxItem {
   csv: string;
 }
 
-export interface TillState {
-  day: Day;
+/** Everything this device stores. Only `shared` is synced; the rest belongs to this device. */
+interface DeviceState {
+  shared: SharedData;
+  /** The sale being rung up on this device - each cashier has their own */
   current: CurrentSale;
-  history: ClosedDay[];
-  quickItems: QuickItem[];
-  /** Closed days waiting to be saved to Google Drive */
+  /** Closed days waiting to be saved to Google Drive as Sheets */
   outbox: OutboxItem[];
-  /** True once Google Drive has been connected on this device */
   driveLinked: boolean;
-  /** Bumped on every change so the backup knows there's something new */
+  /** Random ID given to this device the first time it links to Google Drive; stamped on its sales */
+  deviceId: string | null;
+  /** Cashier name shown on this device's sales, e.g. "Sam" or "iPad" */
+  deviceName: string;
+  sharedFileId: string | null;
+  /** Bumped on every local change; syncedRev is the last one that reached Google Drive */
   rev: number;
-  backedUpRev: number;
-  /** Identifies this till's own backup file in Google Drive, so several tills can save at once */
-  tillId: string;
-  /** Shown on saved days and in the All tills total, e.g. "iPad" */
-  tillName: string;
+  syncedRev: number;
+  lastSyncedAt: string | null;
 }
 
 export type SyncStatus = 'off' | 'saved' | 'saving' | 'reconnect' | 'error';
 
-export interface TillSummary {
-  tillId: string;
-  name: string;
-  /** When its figures were last saved (now, for this device) */
-  updatedAt: string;
-  totals: DayTotals;
-  /** Still trading (day not closed yet) */
-  open: boolean;
-  isThisDevice: boolean;
-}
-
-export interface OtherTill {
-  fileId: string;
-  tillId: string;
-  name: string;
-  modifiedTime: string;
-}
-
-const KEY = 'till-state-v1';
-const MAX_HISTORY = 400;
+const KEY = 'till-state-v2';
+const LEGACY_KEY = 'till-state-v1';
+const POLL_MS = 15_000;
+const PUSH_DELAY_MS = 1500;
 
 const emptySale = (): CurrentSale => ({ lines: [], payments: [] });
 
-function defaultTillName(): string {
+function defaultDeviceName(): string {
   const ua = navigator.userAgent;
   // iPadOS reports itself as a Mac; a touch screen gives it away.
   if (/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'iPad';
@@ -82,28 +73,38 @@ function defaultTillName(): string {
   return 'Till';
 }
 
-function initial(): TillState {
+function initial(): DeviceState {
   return {
-    day: newDay(),
+    shared: emptyShared(),
     current: emptySale(),
-    history: [],
-    quickItems: [],
     outbox: [],
     driveLinked: false,
+    deviceId: null,
+    deviceName: defaultDeviceName(),
+    sharedFileId: null,
     rev: 0,
-    backedUpRev: 0,
-    tillId: newId(),
-    tillName: defaultTillName(),
+    syncedRev: 0,
+    lastSyncedAt: null,
   };
 }
 
-function load(): TillState {
+function load(): DeviceState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const saved = JSON.parse(raw) as Partial<TillState> & { backupChecked?: boolean };
-      delete saved.backupChecked;
-      return { ...initial(), ...saved } as TillState;
+    if (raw) return { ...initial(), ...(JSON.parse(raw) as DeviceState) };
+    // Carry over data from the earlier one-device version.
+    const legacy = localStorage.getItem(LEGACY_KEY);
+    if (legacy) {
+      const old = JSON.parse(legacy);
+      return {
+        ...initial(),
+        shared: fromLegacy(old),
+        current: old.current ?? emptySale(),
+        outbox: old.outbox ?? [],
+        driveLinked: Boolean(old.driveLinked),
+        deviceName: old.tillName ?? defaultDeviceName(),
+        rev: 1,
+      };
     }
   } catch {
     // fall through to a fresh till
@@ -111,46 +112,50 @@ function load(): TillState {
   return initial();
 }
 
-function backupPayload(s: TillState): string {
-  const { day, current, history, quickItems, tillId, tillName } = s;
-  return JSON.stringify({
-    app: 'till',
-    version: 2,
-    savedAt: new Date().toISOString(),
-    tillId,
-    tillName,
-    day,
-    current,
-    history,
-    quickItems,
-  });
+function parseShared(text: string): SharedData | null {
+  try {
+    const data = JSON.parse(text) as SharedData;
+    return data.app === 'till' && data.version === 3 && data.days ? normalize(data) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function useTill() {
-  const [state, setState] = useState<TillState>(load);
-  const [sync, setSync] = useState<SyncStatus>(() => (state.driveLinked ? 'saving' : 'off'));
+  const [store, setStore] = useState<DeviceState>(load);
+  const [sync, setSync] = useState<SyncStatus>(() => (store.driveLinked ? 'saving' : 'off'));
   const [syncError, setSyncError] = useState<string | null>(null);
   /** Change due from the last completed sale - shown until the next sale starts */
   const [lastChange, setLastChange] = useState<{ change: number; total: number } | null>(null);
 
-  const stateRef = useRef(state);
-  stateRef.current = state;
+  const storeRef = useRef(store);
+  storeRef.current = store;
 
   useEffect(() => {
     try {
-      localStorage.setItem(KEY, JSON.stringify(state));
+      localStorage.setItem(KEY, JSON.stringify(store));
     } catch {
       // Storage full or blocked - the till keeps working in memory.
     }
-  }, [state]);
+  }, [store]);
 
-  /** Applies a change and marks it for backup. */
-  const update = useCallback((fn: (s: TillState) => TillState) => {
-    setState((s) => {
+  /** Applies a local change and marks it for syncing. */
+  const update = useCallback((fn: (s: DeviceState) => DeviceState) => {
+    setStore((s) => {
       const next = fn(s);
       return next === s ? s : { ...next, rev: s.rev + 1 };
     });
   }, []);
+
+  /** Changes the open day in the shared data. */
+  const updateDay = useCallback(
+    (fn: (d: DayRecord) => DayRecord) =>
+      update((s) => {
+        const day = openDay(s.shared);
+        return { ...s, shared: { ...s.shared, days: { ...s.shared.days, [day.id]: fn(day) } } };
+      }),
+    [update],
+  );
 
   // ---- Sale editing ----------------------------------------------------
 
@@ -196,7 +201,7 @@ export function useTill() {
   /** Adds a payment; if that settles the sale, records it and starts a new one. */
   const pay = useCallback(
     (method: 'cash' | 'card', amount?: number) => {
-      const s = stateRef.current;
+      const s = storeRef.current;
       const owed = remaining(s.current.lines, s.current.payments);
       if (owed <= 0 || s.current.lines.length === 0) return;
       let payment: Payment;
@@ -213,66 +218,84 @@ export function useTill() {
       }
       const total = s.current.lines.reduce((sum, l) => sum + l.price * l.qty, 0);
       setLastChange({ change, total });
-      update((st) => ({
-        ...st,
-        day: {
-          ...st.day,
-          sales: [
-            ...st.day.sales,
-            { id: newId(), lines: st.current.lines, payments, completedAt: new Date().toISOString() },
-          ],
-        },
-        current: emptySale(),
-      }));
+      const now = new Date().toISOString();
+      update((st) => {
+        const day = openDay(st.shared);
+        const sale = {
+          id: newId(),
+          lines: st.current.lines,
+          payments,
+          completedAt: now,
+          updatedAt: now,
+          cashier: st.deviceName,
+          ...(st.deviceId ? { deviceId: st.deviceId } : {}),
+        };
+        return {
+          ...st,
+          shared: { ...st.shared, days: { ...st.shared.days, [day.id]: { ...day, sales: [...day.sales, sale] } } },
+          current: emptySale(),
+        };
+      });
     },
     [update],
   );
 
+  /** Voids (or restores) a sale on the open day. */
   const toggleVoid = useCallback(
-    (saleId: string) =>
-      update((s) => ({
-        ...s,
-        day: {
-          ...s.day,
-          sales: s.day.sales.map((sale) =>
-            sale.id === saleId
-              ? sale.voidedAt
-                ? { ...sale, voidedAt: undefined }
-                : { ...sale, voidedAt: new Date().toISOString() }
-              : sale,
-          ),
-        },
-      })),
-    [update],
+    (saleId: string) => {
+      const now = new Date().toISOString();
+      updateDay((day) => ({
+        ...day,
+        sales: day.sales.map((sale) =>
+          sale.id !== saleId
+            ? sale
+            : sale.voidedAt
+              ? { ...sale, voidedAt: undefined, updatedAt: now }
+              : { ...sale, voidedAt: now, updatedAt: now },
+        ),
+      }));
+    },
+    [updateDay],
   );
 
   const setFloat = useCallback(
-    (float: number) => update((s) => ({ ...s, day: { ...s.day, float, floatSet: true } })),
+    (float: number) =>
+      updateDay((day) => ({ ...day, float, floatSet: true, floatUpdatedAt: new Date().toISOString() })),
+    [updateDay],
+  );
+
+  const setDeviceName = useCallback(
+    (name: string) => update((s) => ({ ...s, deviceName: name.trim() || defaultDeviceName() })),
     [update],
   );
 
-  const setTillName = useCallback(
-    (tillName: string) => update((s) => ({ ...s, tillName: tillName.trim() || defaultTillName() })),
+  const setQuickItems = useCallback(
+    (quickItems: QuickItem[]) =>
+      update((s) => ({ ...s, shared: { ...s.shared, quickItems, quickItemsUpdatedAt: new Date().toISOString() } })),
     [update],
   );
 
-  const setQuickItems = useCallback((quickItems: QuickItem[]) => update((s) => ({ ...s, quickItems })), [update]);
-
-  /** Saves the day to history (and queues it for Google Drive), then starts a fresh day. */
+  /** Closes the day for every device, queues its Sheet, and opens the next day. */
   const endDay = useCallback(
     (countedCash?: number): ClosedDay => {
-      const closed = closeDay(stateRef.current.day, countedCash, stateRef.current.tillName);
+      const s = storeRef.current;
+      const day = openDay(s.shared);
+      const closedAt = new Date().toISOString();
+      const closedRecord: DayRecord = {
+        ...day,
+        closedAt,
+        closedBy: s.deviceName,
+        ...(countedCash !== undefined ? { countedCash } : {}),
+      };
+      const shared = normalize({ ...s.shared, days: { ...s.shared.days, [day.id]: closedRecord } });
+      const closed = closedDays(shared).find((d) => d.id === day.id)!;
       setLastChange(null);
-      update((s) => ({
-        ...s,
-        history: [closed, ...s.history].slice(0, MAX_HISTORY),
-        outbox: s.driveLinked
-          ? [
-              ...s.outbox,
-              { id: closed.id, name: `Till ${localDate(closed.openedAt)} - ${s.tillName}`, csv: dayToCsv(closed) },
-            ]
-          : s.outbox,
-        day: newDay(),
+      update((st) => ({
+        ...st,
+        shared: mergeShared(st.shared, shared),
+        outbox: st.driveLinked
+          ? [...st.outbox, { id: closed.id, name: `Till ${localDate(tradingDate(closed))}`, csv: dayToCsv(closed) }]
+          : st.outbox,
         current: emptySale(),
       }));
       return closed;
@@ -284,27 +307,71 @@ export function useTill() {
 
   const running = useRef(false);
 
-  const flush = useCallback(async () => {
-    const s = stateRef.current;
+  /**
+   * Saves queued day Sheets, then merges this device's data with the shared
+   * file both ways. `pull` also runs when nothing changed here, to pick up the
+   * other cashiers' sales.
+   */
+  const flush = useCallback(async (pull = false) => {
+    const s = storeRef.current;
     if (!s.driveLinked || running.current) return;
+    const dirty = s.outbox.length > 0 || s.rev !== s.syncedRev;
     if (!drive.hasToken()) {
-      setSync(s.outbox.length || s.rev !== s.backedUpRev ? 'reconnect' : 'saved');
+      setSync(dirty ? 'reconnect' : 'saved');
       return;
     }
-    if (s.outbox.length === 0 && s.rev === s.backedUpRev) {
-      setSync('saved');
-      return;
-    }
+    if (!dirty && !pull) return;
     running.current = true;
-    setSync('saving');
+    if (dirty) setSync('saving');
     try {
       for (const item of s.outbox) {
         await drive.saveDaySheet(item.name, item.csv);
-        setState((st) => ({ ...st, outbox: st.outbox.filter((o) => o.id !== item.id) }));
+        setStore((st) => ({ ...st, outbox: st.outbox.filter((o) => o.id !== item.id) }));
       }
-      const current = stateRef.current;
-      await drive.saveBackup(current.tillId, current.tillName, backupPayload(current));
-      setState((st) => ({ ...st, backedUpRev: current.rev }));
+
+      const startRev = storeRef.current.rev;
+      let local = storeRef.current.shared;
+      let fileId = storeRef.current.sharedFileId;
+      let remote: SharedData | null = null;
+
+      if (fileId) {
+        try {
+          remote = parseShared(await drive.loadFile(fileId));
+        } catch (err) {
+          if (err instanceof drive.AuthRequiredError) throw err;
+          fileId = null; // deleted or unreadable - look it up again
+        }
+      }
+      if (!fileId) {
+        const files = await drive.listSharedFiles();
+        if (files.length === 0) {
+          fileId = await drive.createSharedFile(JSON.stringify(local));
+          remote = local;
+        } else {
+          // Normally one file. If two devices created one at the same moment, fold them into the oldest.
+          fileId = files[0].id;
+          for (const f of files) {
+            const data = parseShared(await drive.loadFile(f.id));
+            if (data) remote = remote ? mergeShared(remote, data) : data;
+          }
+          for (const f of files.slice(1)) await drive.deleteFile(f.id).catch(() => {});
+        }
+      }
+
+      const merged = remote ? mergeShared(local, remote) : local;
+      if (!remote || fingerprint(merged) !== fingerprint(remote)) {
+        await drive.updateSharedFile(fileId, JSON.stringify(merged));
+      }
+      local = merged;
+      const now = new Date().toISOString();
+      setStore((st) => ({
+        ...st,
+        // Merge again in case a sale was rung up while this sync was running.
+        shared: mergeShared(st.shared, local),
+        sharedFileId: fileId,
+        syncedRev: Math.max(st.syncedRev, startRev),
+        lastSyncedAt: now,
+      }));
       setSyncError(null);
       setSync('saved');
     } catch (err) {
@@ -318,129 +385,78 @@ export function useTill() {
     }
   }, []);
 
-  // Back up a few seconds after the last change, so a burst of taps is one upload.
+  // Push shortly after a change, so a burst of taps is one upload.
   useEffect(() => {
-    if (!state.driveLinked) return;
-    const t = window.setTimeout(() => void flush(), 3000);
+    if (!store.driveLinked || store.rev === store.syncedRev) return;
+    const t = window.setTimeout(() => void flush(), PUSH_DELAY_MS);
     return () => window.clearTimeout(t);
-  }, [state.rev, state.outbox.length, state.driveLinked, flush]);
+  }, [store.rev, store.syncedRev, store.outbox.length, store.driveLinked, flush]);
+
+  // Pull the other cashiers' sales regularly while the till is on screen.
+  useEffect(() => {
+    if (!store.driveLinked) return;
+    const tick = () => {
+      if (document.visibilityState === 'visible') void flush(true);
+    };
+    tick();
+    const t = window.setInterval(tick, POLL_MS);
+    document.addEventListener('visibilitychange', tick);
+    window.addEventListener('online', tick);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener('visibilitychange', tick);
+      window.removeEventListener('online', tick);
+    };
+  }, [store.driveLinked, flush]);
 
   // On open: a token that has lapsed gets one silent refresh, but only when no sale is half-rung.
   useEffect(() => {
-    const s = stateRef.current;
+    const s = storeRef.current;
     if (s.driveLinked && !drive.hasToken() && s.current.lines.length === 0) drive.trySilentSignIn();
-    const retry = () => void flush();
-    window.addEventListener('online', retry);
-    return () => window.removeEventListener('online', retry);
-  }, [flush]);
+  }, []);
 
-  // A newly connected till with no quick items of its own borrows them from the most recently saved till.
-  useEffect(() => {
-    const s = stateRef.current;
-    if (!s.driveLinked || !drive.hasToken() || s.quickItems.length > 0) return;
-    void (async () => {
-      try {
-        const other = (await drive.listBackups()).find((f) => f.tillId !== s.tillId);
-        if (!other) return;
-        const data = JSON.parse(await drive.loadFile(other.id)) as { quickItems?: QuickItem[] };
-        if (data.quickItems?.length && stateRef.current.quickItems.length === 0) {
-          update((st) => ({ ...st, quickItems: data.quickItems! }));
-        }
-      } catch {
-        // Nice to have - ignore failures.
-      }
-    })();
-  }, [state.driveLinked, update]);
-
+  /** Links this device to Google Drive, giving it its device ID the first time. */
   const connectDrive = useCallback(() => {
-    // Mark linked first: the sign-in navigates away and back.
-    const next = { ...stateRef.current, driveLinked: true, rev: stateRef.current.rev + 1 };
+    const s = storeRef.current;
+    const deviceId = s.deviceId ?? newId();
+    // Sales rung up before this device was linked get its new ID too.
+    const days: Record<string, DayRecord> = {};
+    for (const [id, d] of Object.entries(s.shared.days)) {
+      days[id] = { ...d, sales: d.sales.map((sale) => (sale.deviceId ? sale : { ...sale, deviceId })) };
+    }
+    const next: DeviceState = {
+      ...s,
+      deviceId,
+      shared: { ...s.shared, days },
+      driveLinked: true,
+      rev: s.rev + 1,
+    };
+    // Save before leaving: the sign-in navigates away and back.
     localStorage.setItem(KEY, JSON.stringify(next));
     drive.signIn(false);
   }, []);
 
   const disconnectDrive = useCallback(async () => {
     await drive.signOut();
-    setState((s) => ({ ...s, driveLinked: false, outbox: [] }));
+    setStore((s) => ({ ...s, driveLinked: false, outbox: [], sharedFileId: null }));
     setSync('off');
   }, []);
 
-  /** The other tills saved in Google Drive (not this one). */
-  const listOtherTills = useCallback(async (): Promise<OtherTill[]> => {
-    const files = await drive.listBackups();
-    return files
-      .filter((f) => f.tillId !== stateRef.current.tillId)
-      .map((f) => ({
-        fileId: f.id,
-        tillId: f.tillId,
-        name: f.name.replace(/^Till backup - /, '').replace(/\.json$/, ''),
-        modifiedTime: f.modifiedTime,
-      }));
-  }, []);
-
-  /**
-   * Makes this device carry on as another till (e.g. the iPhone taking over
-   * when the iPad has died): copies its sales, history and quick items and
-   * takes over its backup file. This device's own data is replaced.
-   */
-  const takeOverTill = useCallback(async (other: OtherTill): Promise<string> => {
-    const data = JSON.parse(await drive.loadFile(other.fileId)) as Partial<TillState> & { app?: string };
-    if (data.app !== 'till' || !data.day) return 'That backup file was not recognised.';
-    setLastChange(null);
-    setState((s) => {
-      const rev = s.rev + 1;
-      const next: TillState = {
-        ...s,
-        day: data.day!,
-        current: data.current ?? emptySale(),
-        history: data.history ?? [],
-        quickItems: data.quickItems ?? s.quickItems,
-        tillId: other.tillId,
-        tillName: data.tillName ?? other.name,
-        rev,
-        backedUpRev: rev,
-      };
-      stateRef.current = next;
-      return next;
-    });
-    setSync('saved');
-    return `This device is now "${data.tillName ?? other.name}".`;
-  }, []);
-
-  /** Today's figures for every till: this one live, the others as last saved to Google Drive. */
-  const allTillsToday = useCallback(async (): Promise<{ tills: TillSummary[]; combined: DayTotals }> => {
-    const today = localDate(new Date().toISOString());
-    const me = stateRef.current;
-    const mine = totalsForDate(me.day, me.history, today);
-    const tills: TillSummary[] = [
-      {
-        tillId: me.tillId,
-        name: me.tillName,
-        updatedAt: new Date().toISOString(),
-        ...mine,
-        isThisDevice: true,
-      },
-    ];
-    for (const f of await drive.listBackups()) {
-      if (f.tillId === me.tillId) continue;
-      try {
-        const data = JSON.parse(await drive.loadFile(f.id)) as Partial<TillState> & { savedAt?: string };
-        if (!data.day) continue;
-        const t = totalsForDate(data.day, data.history ?? [], today);
-        if (t.totals.count === 0 && !t.open && t.totals.expectedDrawer === 0) continue; // not used today
-        tills.push({
-          tillId: f.tillId,
-          name: data.tillName ?? f.name,
-          updatedAt: data.savedAt ?? f.modifiedTime,
-          ...t,
-          isThisDevice: false,
-        });
-      } catch {
-        // Skip an unreadable file rather than failing the whole total.
-      }
-    }
-    return { tills, combined: sumTotals(tills.map((t) => t.totals)) };
-  }, []);
+  /** What the screens read: today's open day and history, derived from the shared data. */
+  const state = useMemo(
+    () => ({
+      day: openDay(store.shared),
+      history: closedDays(store.shared),
+      quickItems: store.shared.quickItems,
+      current: store.current,
+      outbox: store.outbox,
+      driveLinked: store.driveLinked,
+      deviceId: store.deviceId,
+      deviceName: store.deviceName,
+      lastSyncedAt: store.lastSyncedAt,
+    }),
+    [store],
+  );
 
   return {
     state,
@@ -455,16 +471,13 @@ export function useTill() {
     pay,
     toggleVoid,
     setFloat,
+    setDeviceName,
     setQuickItems,
     endDay,
     connectDrive,
     reconnectDrive: () => drive.signIn(false),
     disconnectDrive,
-    setTillName,
-    listOtherTills,
-    takeOverTill,
-    allTillsToday,
-    retrySync: flush,
+    syncNow: () => flush(true),
   };
 }
 

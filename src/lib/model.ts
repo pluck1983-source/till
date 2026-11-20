@@ -31,6 +31,12 @@ export interface Sale {
   completedAt: string;
   /** Set when a sale is voided after completion; kept for the record but left out of totals */
   voidedAt?: string;
+  /** Last change (completion, void or restore) - when two devices disagree, the newest wins */
+  updatedAt?: string;
+  /** Device that rang it up (assigned when the device first links to Google Drive) */
+  deviceId?: string;
+  /** Cashier name of that device at the time */
+  cashier?: string;
 }
 
 export interface Day {
@@ -168,30 +174,39 @@ export function closeDay(day: Day, countedCash?: number, till?: string): ClosedD
   };
 }
 
-/** Adds several days' totals together (e.g. every till's takings for one date). */
-export function sumTotals(list: DayTotals[]): DayTotals {
-  return list.reduce(
-    (a, t) => ({
-      count: a.count + t.count,
-      voidedCount: a.voidedCount + t.voidedCount,
-      total: a.total + t.total,
-      cash: a.cash + t.cash,
-      card: a.card + t.card,
-      expectedDrawer: a.expectedDrawer + t.expectedDrawer,
-    }),
-    { count: 0, voidedCount: 0, total: 0, cash: 0, card: 0, expectedDrawer: 0 },
-  );
+export interface CashierTotals {
+  cashier: string;
+  count: number;
+  total: number;
+  cash: number;
+  card: number;
+}
+
+/** Each cashier's share of a day's sales (voided sales left out). */
+export function totalsByCashier(sales: Sale[]): CashierTotals[] {
+  const map = new Map<string, CashierTotals>();
+  for (const sale of sales) {
+    if (sale.voidedAt) continue;
+    const key = sale.cashier || 'Unknown';
+    const t = map.get(key) ?? { cashier: key, count: 0, total: 0, cash: 0, card: 0 };
+    t.count++;
+    for (const p of sale.payments) {
+      t.total += p.amount;
+      if (p.method === 'cash') t.cash += p.amount;
+      else t.card += p.amount;
+    }
+    map.set(key, t);
+  }
+  return [...map.values()].sort((a, b) => b.total - a.total);
 }
 
 /**
- * A till's totals for one calendar date: its open day if it started that
- * date, plus any days it closed that started that date.
+ * When a day's trading actually happened: its first sale. A day opens the
+ * moment the previous one closes (often the evening before), so the open
+ * time alone would date it a day early.
  */
-export function totalsForDate(day: Day, history: ClosedDay[], date: string): { totals: DayTotals; open: boolean } {
-  const parts: DayTotals[] = history.filter((d) => localDate(d.openedAt) === date).map((d) => d.totals);
-  const open = localDate(day.openedAt) === date && (day.sales.length > 0 || Boolean(day.floatSet));
-  if (open) parts.push(dayTotals(day));
-  return { totals: sumTotals(parts), open };
+export function tradingDate(day: Pick<Day, 'openedAt' | 'sales'>): string {
+  return day.sales[0]?.completedAt ?? day.openedAt;
 }
 
 /** Local calendar date (YYYY-MM-DD) for a timestamp - used to name saved days. */

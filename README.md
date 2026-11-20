@@ -24,14 +24,23 @@ internet. With **Settings → Connect Google account**, each closed day is saved
 as a Google Sheet (`Till 2026-11-20 - iPad`) in a `Till records` folder in your
 Drive. The till uses the `drive.file` scope, so it can only see files it created.
 
-### Several tills at once
+### Two (or more) cashiers, one till
 
-Connect every device to the same Google account and give each one a name in
-**Settings → This till**. Each device saves its own backup file
-(`Till backup - iPad.json`), so they never overwrite each other.
-**Today → All tills today** adds up every till's sales, cash, card and cash in
-till (other tills as of their last save). If a device dies, use
-**Settings → Take over another till** on a replacement to carry on as that till.
+Connect every cashier's device to the same Google account and set a cashier
+name in **Settings → This device**. When a device first links to Drive it gets
+a random device ID, and every sale it rings up carries that ID and the
+cashier name.
+
+All devices share one record, `Till data.json`: one float, one set of sales,
+merged by each sale's random ID. Devices sync a moment after each sale and
+every 15 seconds. Drive can't stop two devices saving at the same instant, so
+the merge only ever adds sales (voids and float changes go by newest
+timestamp) and each device re-merges what it holds on every sync. A sale lost
+to a simultaneous save comes back on the next round.
+
+**End of day** closes the day on every device. A sale rung up on another
+device just after the close moves to the next day. **Today → By cashier**
+shows each cashier's takings.
 
 Google sign-in needs `VITE_GOOGLE_CLIENT_ID` in `.env` (an OAuth "Web
 application" client with `https://pluck1983-source.github.io` as an authorised

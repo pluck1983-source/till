@@ -6,9 +6,8 @@
  * "Till records" folder in your Drive.
  *
  * - Each closed day is saved as a Google Sheet ("Till 2026-11-20").
- * - Each device (till) keeps its own "Till backup - <name>.json" with its open
- *   day, history and quick items, so several tills can save at once and a
- *   replacement device can take over a till.
+ * - "Till data.json" holds the till's shared data: every sale from every
+ *   cashier device, merged by transaction ID (see shared.ts).
  */
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
@@ -159,16 +158,17 @@ async function folderId(): Promise<string> {
   return id;
 }
 
-async function multipartCreate(metadata: object, content: string, contentType: string) {
+async function multipartCreate(metadata: object, content: string, contentType: string): Promise<string> {
   const boundary = `till${Date.now()}`;
   const body =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
     `--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n${content}\r\n--${boundary}--`;
-  await driveFetch(`${UPLOAD}?uploadType=multipart&fields=id`, {
+  const res = await driveFetch(`${UPLOAD}?uploadType=multipart&fields=id`, {
     method: 'POST',
     headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
     body,
   });
+  return ((await res.json()) as { id: string }).id;
 }
 
 /** Saves a closed day's CSV as a Google Sheet in the Till records folder. */
@@ -181,54 +181,42 @@ export async function saveDaySheet(name: string, csv: string) {
   );
 }
 
-export interface TillBackupFile {
+export interface SharedFile {
   id: string;
-  name: string;
-  modifiedTime: string;
-  tillId: string;
+  createdTime: string;
 }
 
-/**
- * Each device keeps its own backup file, tagged with its till ID, so several
- * tills can save at the same time without overwriting each other.
- */
-export async function saveBackup(tillId: string, tillName: string, json: string) {
-  const parent = await folderId();
-  const name = `Till backup - ${tillName}.json`;
-  const q = `appProperties has { key='tillId' and value='${tillId}' } and trashed = false`;
-  const res = await driveFetch(`${API}?${new URLSearchParams({ q, fields: 'files(id,name)', spaces: 'drive' })}`);
-  const existing = ((await res.json()) as { files: { id: string; name: string }[] }).files[0];
-  if (existing) {
-    const boundary = `till${Date.now()}`;
-    const body =
-      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name })}\r\n` +
-      `--${boundary}\r\nContent-Type: application/json\r\n\r\n${json}\r\n--${boundary}--`;
-    await driveFetch(`${UPLOAD}/${existing.id}?uploadType=multipart`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
-      body,
-    });
-  } else {
-    await multipartCreate(
-      { name, parents: [parent], mimeType: 'application/json', appProperties: { tillId, kind: 'till-backup' } },
-      json,
-      'application/json',
-    );
-  }
-}
+const SHARED_NAME = 'Till data.json';
+const SHARED_Q = "appProperties has { key='kind' and value='till-shared' } and trashed = false";
 
-/** Every till's backup file, newest first. */
-export async function listBackups(): Promise<TillBackupFile[]> {
-  const q = `appProperties has { key='kind' and value='till-backup' } and trashed = false`;
+/** Every copy of the shared till file, oldest first (normally exactly one). */
+export async function listSharedFiles(): Promise<SharedFile[]> {
   const res = await driveFetch(
-    `${API}?${new URLSearchParams({ q, fields: 'files(id,name,modifiedTime,appProperties)', spaces: 'drive', orderBy: 'modifiedTime desc' })}`,
+    `${API}?${new URLSearchParams({ q: SHARED_Q, fields: 'files(id,createdTime)', spaces: 'drive', orderBy: 'createdTime' })}`,
   );
-  const body = (await res.json()) as {
-    files: { id: string; name: string; modifiedTime: string; appProperties?: { tillId?: string } }[];
-  };
-  return body.files
-    .filter((f) => f.appProperties?.tillId)
-    .map((f) => ({ id: f.id, name: f.name, modifiedTime: f.modifiedTime, tillId: f.appProperties!.tillId! }));
+  return ((await res.json()) as { files: SharedFile[] }).files;
+}
+
+export async function createSharedFile(json: string): Promise<string> {
+  const parent = await folderId();
+  return multipartCreate(
+    { name: SHARED_NAME, parents: [parent], mimeType: 'application/json', appProperties: { kind: 'till-shared' } },
+    json,
+    'application/json',
+  );
+}
+
+export async function updateSharedFile(id: string, json: string) {
+  await driveFetch(`${UPLOAD}/${id}?uploadType=media`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: json,
+  });
+}
+
+/** Removes a duplicate shared file (only ever one the till itself created). */
+export async function deleteFile(id: string) {
+  await driveFetch(`${API}/${id}`, { method: 'DELETE' });
 }
 
 export async function loadFile(id: string): Promise<string> {

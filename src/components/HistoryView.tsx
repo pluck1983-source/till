@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Till } from '../lib/useTill';
-import { dayToCsv, formatPence, localDate, type ClosedDay } from '../lib/model';
+import { dayToCsv, formatPence, localDate, tradingDate, type ClosedDay } from '../lib/model';
 import { Card, SaleList, TotalTile } from './shared';
 
 export default function HistoryView({ till }: { till: Till }) {
@@ -42,7 +42,7 @@ export default function HistoryView({ till }: { till: Till }) {
 }
 
 function dayLabel(day: ClosedDay) {
-  return new Date(day.openedAt).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return new Date(tradingDate(day)).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 export function DaySummary({ day }: { day: ClosedDay }) {
@@ -51,7 +51,7 @@ export function DaySummary({ day }: { day: ClosedDay }) {
     const url = URL.createObjectURL(new Blob([dayToCsv(day)], { type: 'text/csv' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Till ${localDate(day.openedAt)}.csv`;
+    a.download = `Till ${localDate(tradingDate(day))}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -59,7 +59,7 @@ export function DaySummary({ day }: { day: ClosedDay }) {
     <div className="space-y-3">
       <h2 className="text-lg font-bold">
         {dayLabel(day)}
-        {day.till && <span className="text-base font-normal text-slate-500"> · {day.till}</span>}
+        {day.till && <span className="text-base font-normal text-slate-500"> · closed by {day.till}</span>}
       </h2>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         <TotalTile label="Total takings" value={formatPence(t.total)} tone="total" />

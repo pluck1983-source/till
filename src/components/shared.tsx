@@ -79,6 +79,7 @@ export function SaleList({ sales, onToggleVoid }: { sales: Sale[]; onToggleVoid?
               <span className="block text-xs text-slate-500">
                 <span className="capitalize">{methods}</span>
                 {tendered?.tendered && ` · ${formatPence(tendered.tendered)} given`}
+                {sale.cashier && ` · ${sale.cashier}`}
                 {sale.voidedAt && ' · voided'}
               </span>
             </span>

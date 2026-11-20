@@ -101,7 +101,7 @@ function SyncBadge({ status, till, onClick }: { status: SyncStatus; till: Till; 
     error: { text: 'Google save failed', cls: 'bg-amber-400 text-amber-950' },
   };
   const { text, cls } = map[status];
-  const action = status === 'reconnect' ? till.reconnectDrive : status === 'error' ? () => void till.retrySync() : onClick;
+  const action = status === 'reconnect' ? till.reconnectDrive : status === 'error' ? () => void till.syncNow() : onClick;
   return (
     <button onClick={action} className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>
       <span className="hidden sm:inline">{text}</span>
