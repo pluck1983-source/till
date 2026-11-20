@@ -11,6 +11,7 @@ import {
   parsePence,
   remaining,
   type Day,
+  totalsForDate,
   type SaleLine,
 } from './model';
 
@@ -95,10 +96,22 @@ describe('day totals', () => {
     });
   });
 
+  it('adds up several tills for one date', () => {
+    const closed = closeDay(day, undefined, 'iPad');
+    const other: Day = { ...day, id: 'e', float: 2000, sales: [day.sales[0]] };
+    const a = totalsForDate(other, [closed], '2026-11-20');
+    expect(a.open).toBe(true);
+    expect(a.totals.total).toBe(2700);
+    expect(a.totals.cash).toBe(2000);
+    expect(a.totals.expectedDrawer).toBe(6000 + 3000);
+    expect(totalsForDate(other, [closed], '2026-11-21').totals.total).toBe(0);
+  });
+
   it('writes a CSV with an over/short line when cash was counted', () => {
     const csv = dayToCsv(closeDay(day, 5950));
     expect(csv).toContain('Total takings,17.00');
     expect(csv).toContain('Over / short,-0.50');
     expect(csv).toContain(',Voided');
+    expect(dayToCsv(closeDay(day, undefined, 'iPad'))).toMatch(/^Till,iPad\n/);
   });
 });

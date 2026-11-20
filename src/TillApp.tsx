@@ -99,7 +99,6 @@ function SyncBadge({ status, till, onClick }: { status: SyncStatus; till: Till; 
     saving: { text: 'Saving…', cls: 'bg-brand-700/60' },
     reconnect: { text: 'Reconnect Google', cls: 'bg-amber-400 text-amber-950' },
     error: { text: 'Google save failed', cls: 'bg-amber-400 text-amber-950' },
-    choose: { text: 'Google backup found', cls: 'bg-amber-400 text-amber-950' },
   };
   const { text, cls } = map[status];
   const action = status === 'reconnect' ? till.reconnectDrive : status === 'error' ? () => void till.retrySync() : onClick;

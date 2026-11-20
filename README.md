@@ -21,9 +21,17 @@ https://pluck1983-source.github.io/till/ - open it in Safari and use
 
 Everything is saved on the device as you go - a sale never waits for the
 internet. With **Settings → Connect Google account**, each closed day is saved
-as a Google Sheet in a `Till records` folder in your Drive, plus a backup file
-used to restore onto another device. The till uses the `drive.file` scope, so
-it can only see files it created.
+as a Google Sheet (`Till 2026-11-20 - iPad`) in a `Till records` folder in your
+Drive. The till uses the `drive.file` scope, so it can only see files it created.
+
+### Several tills at once
+
+Connect every device to the same Google account and give each one a name in
+**Settings → This till**. Each device saves its own backup file
+(`Till backup - iPad.json`), so they never overwrite each other.
+**Today → All tills today** adds up every till's sales, cash, card and cash in
+till (other tills as of their last save). If a device dies, use
+**Settings → Take over another till** on a replacement to carry on as that till.
 
 Google sign-in needs `VITE_GOOGLE_CLIENT_ID` in `.env` (an OAuth "Web
 application" client with `https://pluck1983-source.github.io` as an authorised

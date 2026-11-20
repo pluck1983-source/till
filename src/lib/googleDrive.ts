@@ -6,14 +6,14 @@
  * "Till records" folder in your Drive.
  *
  * - Each closed day is saved as a Google Sheet ("Till 2026-11-20").
- * - "Till backup.json" holds the open day, history and quick items so another
- *   device (the iPhone backup) can restore them.
+ * - Each device (till) keeps its own "Till backup - <name>.json" with its open
+ *   day, history and quick items, so several tills can save at once and a
+ *   replacement device can take over a till.
  */
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const FOLDER_NAME = 'Till records';
-const BACKUP_NAME = 'Till backup.json';
 const TOKEN_KEY = 'till-gdrive-token';
 const FOLDER_KEY = 'till-gdrive-folder';
 const STATE_KEY = 'till-gdrive-oauth-state';
@@ -181,25 +181,57 @@ export async function saveDaySheet(name: string, csv: string) {
   );
 }
 
-/** Overwrites the single backup file (creates it the first time). */
-export async function saveBackup(json: string) {
+export interface TillBackupFile {
+  id: string;
+  name: string;
+  modifiedTime: string;
+  tillId: string;
+}
+
+/**
+ * Each device keeps its own backup file, tagged with its till ID, so several
+ * tills can save at the same time without overwriting each other.
+ */
+export async function saveBackup(tillId: string, tillName: string, json: string) {
   const parent = await folderId();
-  const existing = await findFile(BACKUP_NAME, ` and '${parent}' in parents`);
+  const name = `Till backup - ${tillName}.json`;
+  const q = `appProperties has { key='tillId' and value='${tillId}' } and trashed = false`;
+  const res = await driveFetch(`${API}?${new URLSearchParams({ q, fields: 'files(id,name)', spaces: 'drive' })}`);
+  const existing = ((await res.json()) as { files: { id: string; name: string }[] }).files[0];
   if (existing) {
-    await driveFetch(`${UPLOAD}/${existing}?uploadType=media`, {
+    const boundary = `till${Date.now()}`;
+    const body =
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name })}\r\n` +
+      `--${boundary}\r\nContent-Type: application/json\r\n\r\n${json}\r\n--${boundary}--`;
+    await driveFetch(`${UPLOAD}/${existing.id}?uploadType=multipart`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: json,
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body,
     });
   } else {
-    await multipartCreate({ name: BACKUP_NAME, parents: [parent], mimeType: 'application/json' }, json, 'application/json');
+    await multipartCreate(
+      { name, parents: [parent], mimeType: 'application/json', appProperties: { tillId, kind: 'till-backup' } },
+      json,
+      'application/json',
+    );
   }
 }
 
-export async function loadBackup(): Promise<string | null> {
-  const parent = await folderId();
-  const id = await findFile(BACKUP_NAME, ` and '${parent}' in parents`);
-  if (!id) return null;
+/** Every till's backup file, newest first. */
+export async function listBackups(): Promise<TillBackupFile[]> {
+  const q = `appProperties has { key='kind' and value='till-backup' } and trashed = false`;
+  const res = await driveFetch(
+    `${API}?${new URLSearchParams({ q, fields: 'files(id,name,modifiedTime,appProperties)', spaces: 'drive', orderBy: 'modifiedTime desc' })}`,
+  );
+  const body = (await res.json()) as {
+    files: { id: string; name: string; modifiedTime: string; appProperties?: { tillId?: string } }[];
+  };
+  return body.files
+    .filter((f) => f.appProperties?.tillId)
+    .map((f) => ({ id: f.id, name: f.name, modifiedTime: f.modifiedTime, tillId: f.appProperties!.tillId! }));
+}
+
+export async function loadFile(id: string): Promise<string> {
   const res = await driveFetch(`${API}/${id}?alt=media`);
   return res.text();
 }

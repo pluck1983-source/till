@@ -57,7 +57,10 @@ export function DaySummary({ day }: { day: ClosedDay }) {
   };
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-bold">{dayLabel(day)}</h2>
+      <h2 className="text-lg font-bold">
+        {dayLabel(day)}
+        {day.till && <span className="text-base font-normal text-slate-500"> · {day.till}</span>}
+      </h2>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         <TotalTile label="Total takings" value={formatPence(t.total)} tone="total" />
         <TotalTile label="Cash" value={formatPence(t.cash)} tone="cash" />

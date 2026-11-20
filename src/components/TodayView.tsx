@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { Till } from '../lib/useTill';
+import type { Till, TillSummary } from '../lib/useTill';
+import type { DayTotals } from '../lib/model';
 import { dayTotals, formatPence, type ClosedDay } from '../lib/model';
 import { Card, MoneyInput, SaleList, TotalTile } from './shared';
 import { DaySummary } from './HistoryView';
@@ -33,7 +34,7 @@ export default function TodayView({ till }: { till: Till }) {
     <div className="h-full overflow-y-auto p-3 md:p-6">
       <div className="mx-auto max-w-3xl space-y-4">
         <div className="flex items-baseline justify-between">
-          <h1 className="text-xl font-bold">Today</h1>
+          <h1 className="text-xl font-bold">Today <span className="text-base font-normal text-slate-500">· {till.state.tillName}</span></h1>
           <span className="text-sm text-slate-500">
             Opened {new Date(day.openedAt).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
           </span>
@@ -121,6 +122,8 @@ export default function TodayView({ till }: { till: Till }) {
           </Card>
         )}
 
+        {till.state.driveLinked && <AllTills till={till} />}
+
         <Card>
           <h2 className="mb-1 font-bold">Transactions</h2>
           {totals.voidedCount > 0 && <p className="text-xs text-slate-500">{totals.voidedCount} voided - not in the totals</p>}
@@ -128,5 +131,83 @@ export default function TodayView({ till }: { till: Till }) {
         </Card>
       </div>
     </div>
+  );
+}
+
+/** Combined takings across every device saving to the same Google account. */
+function AllTills({ till }: { till: Till }) {
+  const [result, setResult] = useState<{ tills: TillSummary[]; combined: DayTotals } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setResult(await till.allTillsToday());
+    } catch (err) {
+      setError(err instanceof Error && err.name === 'AuthRequiredError' ? 'Reconnect Google to see the other tills.' : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-bold">All tills today</h2>
+        <button onClick={() => void load()} disabled={loading} className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
+          {loading ? 'Checking…' : result ? 'Refresh' : 'Check all tills'}
+        </button>
+      </div>
+      {error && <p className="text-sm text-amber-700">{error}</p>}
+      {result && (
+        <div className="tabular overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="py-1 pr-2">Till</th>
+                <th className="py-1 pr-2 text-right">Sales</th>
+                <th className="py-1 pr-2 text-right">Cash</th>
+                <th className="py-1 pr-2 text-right">Card</th>
+                <th className="py-1 pr-2 text-right">Total</th>
+                <th className="py-1 text-right">In till</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-brand-100 dark:divide-brand-950">
+              {result.tills.map((t) => (
+                <tr key={t.tillId}>
+                  <td className="py-1.5 pr-2">
+                    <span className="font-semibold">{t.name}</span>
+                    {t.isThisDevice && <span className="text-slate-500"> (this one)</span>}
+                    <span className="block text-xs text-slate-500">
+                      {t.open ? 'open' : 'closed'}
+                      {!t.isThisDevice &&
+                        ` · saved ${new Date(t.updatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                    </span>
+                  </td>
+                  <td className="py-1.5 pr-2 text-right">{t.totals.count}</td>
+                  <td className="py-1.5 pr-2 text-right">{formatPence(t.totals.cash)}</td>
+                  <td className="py-1.5 pr-2 text-right">{formatPence(t.totals.card)}</td>
+                  <td className="py-1.5 pr-2 text-right">{formatPence(t.totals.total)}</td>
+                  <td className="py-1.5 text-right">{formatPence(t.totals.expectedDrawer)}</td>
+                </tr>
+              ))}
+              <tr className="font-bold">
+                <td className="py-1.5 pr-2">All tills</td>
+                <td className="py-1.5 pr-2 text-right">{result.combined.count}</td>
+                <td className="py-1.5 pr-2 text-right">{formatPence(result.combined.cash)}</td>
+                <td className="py-1.5 pr-2 text-right">{formatPence(result.combined.card)}</td>
+                <td className="py-1.5 pr-2 text-right">{formatPence(result.combined.total)}</td>
+                <td className="py-1.5 text-right">{formatPence(result.combined.expectedDrawer)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="mt-1 text-xs text-slate-500">
+            Other tills show their figures as of their last save, usually a few seconds after their last sale.
+          </p>
+        </div>
+      )}
+    </Card>
   );
 }

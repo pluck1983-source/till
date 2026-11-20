@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Till } from '../lib/useTill';
+import type { OtherTill, Till } from '../lib/useTill';
 import { formatPence, newId } from '../lib/model';
 import { Card, MoneyInput } from './shared';
 
@@ -8,6 +8,7 @@ export default function SettingsView({ till }: { till: Till }) {
     <div className="h-full overflow-y-auto p-3 md:p-6">
       <div className="mx-auto max-w-3xl space-y-4">
         <h1 className="text-xl font-bold">Settings</h1>
+        <TillNameCard till={till} />
         <QuickItemsEditor till={till} />
         <GoogleCard till={till} />
       </div>
@@ -78,8 +79,28 @@ function QuickItemsEditor({ till }: { till: Till }) {
   );
 }
 
+function TillNameCard({ till }: { till: Till }) {
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-bold">This till</h2>
+      <p className="text-sm text-slate-500">
+        Give each device its own name. It labels this till's saved days and its line in the All tills total.
+      </p>
+      <input
+        key={till.state.tillId}
+        defaultValue={till.state.tillName}
+        onBlur={(e) => till.setTillName(e.target.value)}
+        aria-label="Till name"
+        placeholder="e.g. iPad, Front counter"
+        className="w-full max-w-xs rounded-lg border border-slate-300 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-900"
+      />
+    </Card>
+  );
+}
+
 function GoogleCard({ till }: { till: Till }) {
   const [msg, setMsg] = useState<string | null>(null);
+  const [others, setOthers] = useState<OtherTill[] | null>(null);
   const linked = till.state.driveLinked;
 
   if (!till.driveConfigured) {
@@ -96,8 +117,9 @@ function GoogleCard({ till }: { till: Till }) {
       <div>
         <h2 className="font-bold">Google Drive</h2>
         <p className="text-sm text-slate-500">
-          Each closed day is saved as a Google Sheet in a <strong>Till records</strong> folder in your Drive, and a backup of
-          the till is kept there so your iPhone can pick up where the iPad left off. The till only sees files it creates.
+          Each closed day is saved as a Google Sheet in a <strong>Till records</strong> folder in your Drive. Every device
+          keeps its own backup there too, so several tills can save at the same time. Connect each device to the same Google
+          account. The till only sees files it creates.
         </p>
       </div>
       {linked ? (
@@ -105,35 +127,11 @@ function GoogleCard({ till }: { till: Till }) {
           <p className="text-sm">
             Status:{' '}
             <strong>
-              {{ saved: 'Saved', saving: 'Saving…', reconnect: 'Sign-in expired - reconnect to save', error: 'Last save failed', off: 'Off', choose: 'Waiting for you to choose (below)' }[till.sync]}
+              {{ saved: 'Saved', saving: 'Saving…', reconnect: 'Sign-in expired - reconnect to save', error: 'Last save failed', off: 'Off' }[till.sync]}
             </strong>
             {till.state.outbox.length > 0 && ` · ${till.state.outbox.length} day(s) waiting to upload`}
           </p>
           {till.syncError && <p className="text-sm text-amber-700">{till.syncError}</p>}
-          {till.sync === 'choose' && (
-            <div className="space-y-2 rounded-lg bg-amber-100 p-3 text-sm text-amber-950">
-              <p>
-                Google Drive already has a till backup from another device, and this device has its own sales. Which should
-                win? (Nothing has been overwritten yet.)
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={async () => setMsg(await till.restoreFromDrive())}
-                  className="rounded-lg bg-brand-600 px-3 py-2 font-semibold text-white"
-                >
-                  Use the Google copy
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm("Overwrite the Google Drive backup with this device's till?")) till.keepThisDevice();
-                  }}
-                  className="rounded-lg bg-white px-3 py-2 font-semibold"
-                >
-                  Keep this device's
-                </button>
-              </div>
-            </div>
-          )}
           <div className="flex flex-wrap gap-2">
             {(till.sync === 'reconnect' || till.sync === 'error') && (
               <button onClick={till.reconnectDrive} className="rounded-lg bg-brand-600 px-4 py-2 font-semibold text-white">
@@ -142,21 +140,59 @@ function GoogleCard({ till }: { till: Till }) {
             )}
             <button
               onClick={async () => {
-                if (!confirm('Replace everything on this device (today, history and quick items) with the copy saved in Google Drive?')) return;
+                setMsg(null);
                 try {
-                  setMsg(await till.restoreFromDrive());
+                  const list = await till.listOtherTills();
+                  setOthers(list);
+                  if (list.length === 0) setMsg('No other tills have saved to this Google account yet.');
                 } catch (err) {
                   setMsg(err instanceof Error ? err.message : String(err));
                 }
               }}
               className="rounded-lg bg-slate-200 px-4 py-2 font-semibold dark:bg-slate-800"
             >
-              Restore from Google Drive
+              Take over another till…
             </button>
             <button onClick={() => void till.disconnectDrive()} className="rounded-lg px-4 py-2 text-brand-600 underline">
               Disconnect
             </button>
           </div>
+          {others && others.length > 0 && (
+            <div className="space-y-2 rounded-lg bg-amber-50 p-3 text-sm dark:bg-amber-950">
+              <p>
+                For when a device has died: this device carries on as the till you pick, with its sales so far today and its
+                history. <strong>This device's own sales and history are replaced</strong>, and the other device should
+                not be used as a till again.
+              </p>
+              {others.map((o) => (
+                <div key={o.fileId} className="flex flex-wrap items-center gap-2">
+                  <span className="flex-1">
+                    <strong>{o.name}</strong>{' '}
+                    <span className="text-slate-500">
+                      last saved {new Date(o.modifiedTime).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </span>
+                  </span>
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Replace everything on this device with till "${o.name}"?`)) return;
+                      try {
+                        setMsg(await till.takeOverTill(o));
+                        setOthers(null);
+                      } catch (err) {
+                        setMsg(err instanceof Error ? err.message : String(err));
+                      }
+                    }}
+                    className="rounded-lg bg-brand-600 px-3 py-1.5 font-semibold text-white"
+                  >
+                    Take over
+                  </button>
+                </div>
+              ))}
+              <button onClick={() => setOthers(null)} className="text-slate-500 underline">
+                Cancel
+              </button>
+            </div>
+          )}
           {msg && <p className="text-sm">{msg}</p>}
         </>
       ) : (

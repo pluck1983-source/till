@@ -58,6 +58,8 @@ export interface ClosedDay extends Day {
   totals: DayTotals;
   /** Cash counted at close, if entered */
   countedCash?: number;
+  /** Name of the till (device) that took these sales */
+  till?: string;
 }
 
 export interface QuickItem {
@@ -156,13 +158,40 @@ export function newDay(float = 0): Day {
   return { id: newId(), openedAt: new Date().toISOString(), float, sales: [] };
 }
 
-export function closeDay(day: Day, countedCash?: number): ClosedDay {
+export function closeDay(day: Day, countedCash?: number, till?: string): ClosedDay {
   return {
     ...day,
     closedAt: new Date().toISOString(),
     totals: dayTotals(day),
     ...(countedCash !== undefined ? { countedCash } : {}),
+    ...(till ? { till } : {}),
   };
+}
+
+/** Adds several days' totals together (e.g. every till's takings for one date). */
+export function sumTotals(list: DayTotals[]): DayTotals {
+  return list.reduce(
+    (a, t) => ({
+      count: a.count + t.count,
+      voidedCount: a.voidedCount + t.voidedCount,
+      total: a.total + t.total,
+      cash: a.cash + t.cash,
+      card: a.card + t.card,
+      expectedDrawer: a.expectedDrawer + t.expectedDrawer,
+    }),
+    { count: 0, voidedCount: 0, total: 0, cash: 0, card: 0, expectedDrawer: 0 },
+  );
+}
+
+/**
+ * A till's totals for one calendar date: its open day if it started that
+ * date, plus any days it closed that started that date.
+ */
+export function totalsForDate(day: Day, history: ClosedDay[], date: string): { totals: DayTotals; open: boolean } {
+  const parts: DayTotals[] = history.filter((d) => localDate(d.openedAt) === date).map((d) => d.totals);
+  const open = localDate(day.openedAt) === date && (day.sales.length > 0 || Boolean(day.floatSet));
+  if (open) parts.push(dayTotals(day));
+  return { totals: sumTotals(parts), open };
 }
 
 /** Local calendar date (YYYY-MM-DD) for a timestamp - used to name saved days. */
@@ -180,7 +209,9 @@ const pounds = (p: number) => (p / 100).toFixed(2);
 
 /** One row per sale, then a totals block - opens straight into Google Sheets or Excel. */
 export function dayToCsv(day: ClosedDay): string {
-  const rows: (string | number)[][] = [['Time', 'Items', 'Total', 'Cash', 'Card', 'Status']];
+  const rows: (string | number)[][] = [];
+  if (day.till) rows.push(['Till', day.till], []);
+  rows.push(['Time', 'Items', 'Total', 'Cash', 'Card', 'Status']);
   for (const sale of day.sales) {
     const cash = sale.payments.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0);
     const card = sale.payments.filter((p) => p.method === 'card').reduce((s, p) => s + p.amount, 0);

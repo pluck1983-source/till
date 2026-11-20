@@ -8,6 +8,9 @@ import {
   newDay,
   newId,
   remaining,
+  sumTotals,
+  totalsForDate,
+  type DayTotals,
   type ClosedDay,
   type Day,
   type Payment,
@@ -39,16 +42,45 @@ export interface TillState {
   /** Bumped on every change so the backup knows there's something new */
   rev: number;
   backedUpRev: number;
-  /** False until this device has checked Google Drive for an existing backup - so it never overwrites one blindly */
-  backupChecked: boolean;
+  /** Identifies this till's own backup file in Google Drive, so several tills can save at once */
+  tillId: string;
+  /** Shown on saved days and in the All tills total, e.g. "iPad" */
+  tillName: string;
 }
 
-export type SyncStatus = 'off' | 'saved' | 'saving' | 'reconnect' | 'error' | 'choose';
+export type SyncStatus = 'off' | 'saved' | 'saving' | 'reconnect' | 'error';
+
+export interface TillSummary {
+  tillId: string;
+  name: string;
+  /** When its figures were last saved (now, for this device) */
+  updatedAt: string;
+  totals: DayTotals;
+  /** Still trading (day not closed yet) */
+  open: boolean;
+  isThisDevice: boolean;
+}
+
+export interface OtherTill {
+  fileId: string;
+  tillId: string;
+  name: string;
+  modifiedTime: string;
+}
 
 const KEY = 'till-state-v1';
 const MAX_HISTORY = 400;
 
 const emptySale = (): CurrentSale => ({ lines: [], payments: [] });
+
+function defaultTillName(): string {
+  const ua = navigator.userAgent;
+  // iPadOS reports itself as a Mac; a touch screen gives it away.
+  if (/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'iPad';
+  if (/iPhone/.test(ua)) return 'iPhone';
+  if (/Android/.test(ua)) return 'Android';
+  return 'Till';
+}
 
 function initial(): TillState {
   return {
@@ -60,14 +92,19 @@ function initial(): TillState {
     driveLinked: false,
     rev: 0,
     backedUpRev: 0,
-    backupChecked: false,
+    tillId: newId(),
+    tillName: defaultTillName(),
   };
 }
 
 function load(): TillState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...initial(), ...(JSON.parse(raw) as TillState) };
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<TillState> & { backupChecked?: boolean };
+      delete saved.backupChecked;
+      return { ...initial(), ...saved } as TillState;
+    }
   } catch {
     // fall through to a fresh till
   }
@@ -75,8 +112,18 @@ function load(): TillState {
 }
 
 function backupPayload(s: TillState): string {
-  const { day, current, history, quickItems } = s;
-  return JSON.stringify({ app: 'till', version: 1, savedAt: new Date().toISOString(), day, current, history, quickItems });
+  const { day, current, history, quickItems, tillId, tillName } = s;
+  return JSON.stringify({
+    app: 'till',
+    version: 2,
+    savedAt: new Date().toISOString(),
+    tillId,
+    tillName,
+    day,
+    current,
+    history,
+    quickItems,
+  });
 }
 
 export function useTill() {
@@ -204,18 +251,26 @@ export function useTill() {
     [update],
   );
 
+  const setTillName = useCallback(
+    (tillName: string) => update((s) => ({ ...s, tillName: tillName.trim() || defaultTillName() })),
+    [update],
+  );
+
   const setQuickItems = useCallback((quickItems: QuickItem[]) => update((s) => ({ ...s, quickItems })), [update]);
 
   /** Saves the day to history (and queues it for Google Drive), then starts a fresh day. */
   const endDay = useCallback(
     (countedCash?: number): ClosedDay => {
-      const closed = closeDay(stateRef.current.day, countedCash);
+      const closed = closeDay(stateRef.current.day, countedCash, stateRef.current.tillName);
       setLastChange(null);
       update((s) => ({
         ...s,
         history: [closed, ...s.history].slice(0, MAX_HISTORY),
         outbox: s.driveLinked
-          ? [...s.outbox, { id: closed.id, name: `Till ${localDate(closed.openedAt)}`, csv: dayToCsv(closed) }]
+          ? [
+              ...s.outbox,
+              { id: closed.id, name: `Till ${localDate(closed.openedAt)} - ${s.tillName}`, csv: dayToCsv(closed) },
+            ]
           : s.outbox,
         day: newDay(),
         current: emptySale(),
@@ -226,29 +281,6 @@ export function useTill() {
   );
 
   // ---- Google Drive ----------------------------------------------------
-
-  /** Replaces everything on this device with a backup's contents. Returns false if it isn't a till backup. */
-  const applyBackup = useCallback((text: string): boolean => {
-    const data = JSON.parse(text) as Partial<TillState> & { app?: string };
-    if (data.app !== 'till' || !data.day) return false;
-    setLastChange(null);
-    setState((s) => {
-      const rev = s.rev + 1;
-      const next: TillState = {
-        ...s,
-        day: data.day!,
-        current: data.current ?? emptySale(),
-        history: data.history ?? [],
-        quickItems: data.quickItems ?? [],
-        rev,
-        backedUpRev: rev,
-        backupChecked: true,
-      };
-      stateRef.current = next;
-      return next;
-    });
-    return true;
-  }, []);
 
   const running = useRef(false);
 
@@ -266,33 +298,13 @@ export function useTill() {
     running.current = true;
     setSync('saving');
     try {
-      if (!s.backupChecked) {
-        // First save from this device: if Google already holds a till backup
-        // (e.g. from the iPad), don't overwrite it with this device's copy.
-        const remote = await drive.loadBackup();
-        if (remote) {
-          const local = stateRef.current;
-          const localEmpty =
-            local.day.sales.length === 0 &&
-            local.current.lines.length === 0 &&
-            local.history.length === 0 &&
-            local.quickItems.length === 0;
-          if (!localEmpty) {
-            setSync('choose');
-            return;
-          }
-          applyBackup(remote);
-        }
-        setState((st) => ({ ...st, backupChecked: true }));
-        stateRef.current = { ...stateRef.current, backupChecked: true };
-      }
       for (const item of s.outbox) {
         await drive.saveDaySheet(item.name, item.csv);
         setState((st) => ({ ...st, outbox: st.outbox.filter((o) => o.id !== item.id) }));
       }
-      const rev = stateRef.current.rev;
-      await drive.saveBackup(backupPayload(stateRef.current));
-      setState((st) => ({ ...st, backedUpRev: rev }));
+      const current = stateRef.current;
+      await drive.saveBackup(current.tillId, current.tillName, backupPayload(current));
+      setState((st) => ({ ...st, backedUpRev: current.rev }));
       setSyncError(null);
       setSync('saved');
     } catch (err) {
@@ -304,7 +316,7 @@ export function useTill() {
     } finally {
       running.current = false;
     }
-  }, [applyBackup]);
+  }, []);
 
   // Back up a few seconds after the last change, so a burst of taps is one upload.
   useEffect(() => {
@@ -322,6 +334,24 @@ export function useTill() {
     return () => window.removeEventListener('online', retry);
   }, [flush]);
 
+  // A newly connected till with no quick items of its own borrows them from the most recently saved till.
+  useEffect(() => {
+    const s = stateRef.current;
+    if (!s.driveLinked || !drive.hasToken() || s.quickItems.length > 0) return;
+    void (async () => {
+      try {
+        const other = (await drive.listBackups()).find((f) => f.tillId !== s.tillId);
+        if (!other) return;
+        const data = JSON.parse(await drive.loadFile(other.id)) as { quickItems?: QuickItem[] };
+        if (data.quickItems?.length && stateRef.current.quickItems.length === 0) {
+          update((st) => ({ ...st, quickItems: data.quickItems! }));
+        }
+      } catch {
+        // Nice to have - ignore failures.
+      }
+    })();
+  }, [state.driveLinked, update]);
+
   const connectDrive = useCallback(() => {
     // Mark linked first: the sign-in navigates away and back.
     const next = { ...stateRef.current, driveLinked: true, rev: stateRef.current.rev + 1 };
@@ -331,22 +361,85 @@ export function useTill() {
 
   const disconnectDrive = useCallback(async () => {
     await drive.signOut();
-    setState((s) => ({ ...s, driveLinked: false, outbox: [], backupChecked: false }));
+    setState((s) => ({ ...s, driveLinked: false, outbox: [] }));
     setSync('off');
   }, []);
 
-  /** Replaces everything on this device with the copy in Google Drive. */
-  const restoreFromDrive = useCallback(async (): Promise<string> => {
-    const text = await drive.loadBackup();
-    if (!text) return 'No backup found in Google Drive yet.';
-    if (!applyBackup(text)) return 'That backup file was not recognised.';
-    setSync('saved');
-    return 'Restored from Google Drive.';
-  }, [applyBackup]);
+  /** The other tills saved in Google Drive (not this one). */
+  const listOtherTills = useCallback(async (): Promise<OtherTill[]> => {
+    const files = await drive.listBackups();
+    return files
+      .filter((f) => f.tillId !== stateRef.current.tillId)
+      .map((f) => ({
+        fileId: f.id,
+        tillId: f.tillId,
+        name: f.name.replace(/^Till backup - /, '').replace(/\.json$/, ''),
+        modifiedTime: f.modifiedTime,
+      }));
+  }, []);
 
-  /** Keeps this device's data and lets it replace the Google Drive backup. */
-  const keepThisDevice = useCallback(() => {
-    setState((s) => ({ ...s, backupChecked: true, rev: s.rev + 1 }));
+  /**
+   * Makes this device carry on as another till (e.g. the iPhone taking over
+   * when the iPad has died): copies its sales, history and quick items and
+   * takes over its backup file. This device's own data is replaced.
+   */
+  const takeOverTill = useCallback(async (other: OtherTill): Promise<string> => {
+    const data = JSON.parse(await drive.loadFile(other.fileId)) as Partial<TillState> & { app?: string };
+    if (data.app !== 'till' || !data.day) return 'That backup file was not recognised.';
+    setLastChange(null);
+    setState((s) => {
+      const rev = s.rev + 1;
+      const next: TillState = {
+        ...s,
+        day: data.day!,
+        current: data.current ?? emptySale(),
+        history: data.history ?? [],
+        quickItems: data.quickItems ?? s.quickItems,
+        tillId: other.tillId,
+        tillName: data.tillName ?? other.name,
+        rev,
+        backedUpRev: rev,
+      };
+      stateRef.current = next;
+      return next;
+    });
+    setSync('saved');
+    return `This device is now "${data.tillName ?? other.name}".`;
+  }, []);
+
+  /** Today's figures for every till: this one live, the others as last saved to Google Drive. */
+  const allTillsToday = useCallback(async (): Promise<{ tills: TillSummary[]; combined: DayTotals }> => {
+    const today = localDate(new Date().toISOString());
+    const me = stateRef.current;
+    const mine = totalsForDate(me.day, me.history, today);
+    const tills: TillSummary[] = [
+      {
+        tillId: me.tillId,
+        name: me.tillName,
+        updatedAt: new Date().toISOString(),
+        ...mine,
+        isThisDevice: true,
+      },
+    ];
+    for (const f of await drive.listBackups()) {
+      if (f.tillId === me.tillId) continue;
+      try {
+        const data = JSON.parse(await drive.loadFile(f.id)) as Partial<TillState> & { savedAt?: string };
+        if (!data.day) continue;
+        const t = totalsForDate(data.day, data.history ?? [], today);
+        if (t.totals.count === 0 && !t.open && t.totals.expectedDrawer === 0) continue; // not used today
+        tills.push({
+          tillId: f.tillId,
+          name: data.tillName ?? f.name,
+          updatedAt: data.savedAt ?? f.modifiedTime,
+          ...t,
+          isThisDevice: false,
+        });
+      } catch {
+        // Skip an unreadable file rather than failing the whole total.
+      }
+    }
+    return { tills, combined: sumTotals(tills.map((t) => t.totals)) };
   }, []);
 
   return {
@@ -367,8 +460,10 @@ export function useTill() {
     connectDrive,
     reconnectDrive: () => drive.signIn(false),
     disconnectDrive,
-    restoreFromDrive,
-    keepThisDevice,
+    setTillName,
+    listOtherTills,
+    takeOverTill,
+    allTillsToday,
     retrySync: flush,
   };
 }
