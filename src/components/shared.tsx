@@ -76,8 +76,8 @@ export function SaleList({ sales, onToggleVoid }: { sales: Sale[]; onToggleVoid?
               <span className={`block truncate ${sale.voidedAt ? 'line-through' : ''}`}>
                 {sale.lines.map((l) => `${l.qty > 1 ? `${l.qty}× ` : ''}${l.label || formatPence(l.price)}`).join(', ')}
               </span>
-              <span className="block text-xs text-slate-500 capitalize">
-                {methods}
+              <span className="block text-xs text-slate-500">
+                <span className="capitalize">{methods}</span>
                 {tendered?.tendered && ` · ${formatPence(tendered.tendered)} given`}
                 {sale.voidedAt && ' · voided'}
               </span>

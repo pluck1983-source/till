@@ -38,6 +38,8 @@ export interface Day {
   openedAt: string;
   /** Cash in the drawer at the start of the day, in pence */
   float: number;
+  /** True once the float has been set (or skipped) for this day, so the till stops asking */
+  floatSet?: boolean;
   sales: Sale[];
 }
 
@@ -202,7 +204,7 @@ export function dayToCsv(day: ClosedDay): string {
   rows.push(['Cash', pounds(t.cash)]);
   rows.push(['Card', pounds(t.card)]);
   rows.push(['Opening float', pounds(day.float)]);
-  rows.push(['Expected in drawer', pounds(t.expectedDrawer)]);
+  rows.push(['Cash in till (float + cash)', pounds(t.expectedDrawer)]);
   if (day.countedCash !== undefined) {
     rows.push(['Counted in drawer', pounds(day.countedCash)]);
     rows.push(['Over / short', pounds(day.countedCash - t.expectedDrawer)]);

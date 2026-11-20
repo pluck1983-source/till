@@ -66,7 +66,7 @@ export function DaySummary({ day }: { day: ClosedDay }) {
       </div>
       <Card className="tabular grid grid-cols-1 gap-1 text-sm md:grid-cols-2">
         <span>Opening float: <strong>{formatPence(day.float)}</strong></span>
-        <span>Expected in drawer: <strong>{formatPence(t.expectedDrawer)}</strong></span>
+        <span>Cash in till (float + cash): <strong>{formatPence(t.expectedDrawer)}</strong></span>
         {day.countedCash !== undefined && (
           <>
             <span>Counted: <strong>{formatPence(day.countedCash)}</strong></span>

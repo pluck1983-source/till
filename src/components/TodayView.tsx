@@ -43,7 +43,7 @@ export default function TodayView({ till }: { till: Till }) {
           <TotalTile label="Total takings" value={formatPence(totals.total)} tone="total" />
           <TotalTile label="Cash" value={formatPence(totals.cash)} tone="cash" />
           <TotalTile label="Card" value={formatPence(totals.card)} tone="card" />
-          <TotalTile label="Sales" value={String(totals.count)} />
+          <TotalTile label="Cash in till" value={formatPence(totals.expectedDrawer)} />
         </div>
 
         <Card className="flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -58,7 +58,8 @@ export default function TodayView({ till }: { till: Till }) {
             />
           </label>
           <span className="tabular text-sm">
-            Cash expected in drawer: <strong>{formatPence(totals.expectedDrawer)}</strong>
+            {formatPence(day.float)} float + {formatPence(totals.cash)} cash sales ={' '}
+            <strong>{formatPence(totals.expectedDrawer)} in till</strong> · {totals.count} sales
           </span>
         </Card>
 
@@ -77,6 +78,14 @@ export default function TodayView({ till }: { till: Till }) {
                 There's an unfinished sale on the till. It will be discarded if you close now.
               </p>
             )}
+            <div className="tabular rounded-xl bg-emerald-50 p-3 dark:bg-emerald-950">
+              <div className="flex justify-between text-sm"><span>Float</span><span>{formatPence(day.float)}</span></div>
+              <div className="flex justify-between text-sm"><span>Cash sales</span><span>{formatPence(totals.cash)}</span></div>
+              <div className="mt-1 flex justify-between border-t border-emerald-200 pt-1 text-xl font-bold text-emerald-800 dark:border-emerald-800 dark:text-emerald-200">
+                <span>Cash in till</span>
+                <span>{formatPence(totals.expectedDrawer)}</span>
+              </div>
+            </div>
             <label className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold">Cash counted in drawer (optional)</span>
               <MoneyInput value={counted} onChange={setCounted} className="w-36" ariaLabel="Cash counted" />

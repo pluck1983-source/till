@@ -199,7 +199,10 @@ export function useTill() {
     [update],
   );
 
-  const setFloat = useCallback((float: number) => update((s) => ({ ...s, day: { ...s.day, float } })), [update]);
+  const setFloat = useCallback(
+    (float: number) => update((s) => ({ ...s, day: { ...s.day, float, floatSet: true } })),
+    [update],
+  );
 
   const setQuickItems = useCallback((quickItems: QuickItem[]) => update((s) => ({ ...s, quickItems })), [update]);
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MoneyInput } from './shared';
 import type { Till } from '../lib/useTill';
 import { cashSuggestions, formatPence, keypadPress, linesTotal, paidTotal, parsePence } from '../lib/model';
 
@@ -49,6 +50,7 @@ export default function TillView({ till }: { till: Till }) {
         )}
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3 md:px-4">
+          {!hasSale && !till.state.day.floatSet && till.state.day.sales.length === 0 && <FloatPrompt till={till} />}
           {!hasSale && till.lastChange && <ChangeDue change={till.lastChange.change} total={till.lastChange.total} />}
           {!hasSale && !till.lastChange && (
             <p className="py-10 text-center text-slate-400">Key in a price and tap Add item</p>
@@ -201,6 +203,41 @@ function ChangeDue({ change, total }: { change: number; total: number }) {
       </p>
       {change > 0 && <p className="mt-2 text-slate-600 dark:text-slate-400">Sale total {formatPence(total)}</p>}
       <p className="mt-3 text-sm text-slate-500">Key in the next item to start a new sale</p>
+    </div>
+  );
+}
+
+/** Asks for the day's float before the first sale, so the till knows the cash it started with. */
+function FloatPrompt({ till }: { till: Till }) {
+  const [float, setFloat] = useState<number | undefined>(undefined);
+  const last = till.state.history[0]?.float ?? 0;
+  return (
+    <div className="my-4 rounded-2xl border border-brand-200 bg-white p-4 shadow-sm dark:border-brand-900 dark:bg-slate-900">
+      <p className="font-bold">Cash float in the till today?</p>
+      <p className="mb-3 text-sm text-slate-500">
+        Added to your cash takings so End of day shows the total cash that should be in the till.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <MoneyInput value={float} onChange={setFloat} className="w-32" ariaLabel="Float" />
+        <button
+          onClick={() => float !== undefined && till.setFloat(float)}
+          disabled={float === undefined}
+          className="h-11 rounded-xl bg-brand-600 px-4 font-semibold text-white disabled:opacity-40"
+        >
+          Set float
+        </button>
+        {last > 0 && (
+          <button
+            onClick={() => till.setFloat(last)}
+            className="tabular h-11 rounded-xl border-2 border-brand-600 px-4 font-semibold text-brand-700 dark:text-brand-300"
+          >
+            Same as last time ({formatPence(last)})
+          </button>
+        )}
+        <button onClick={() => till.setFloat(0)} className="h-11 px-2 text-sm text-slate-500 underline">
+          No float
+        </button>
+      </div>
     </div>
   );
 }

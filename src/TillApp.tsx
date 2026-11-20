@@ -77,7 +77,8 @@ function TotalsStrip({ totals, onClick }: { totals: DayTotals; onClick: () => vo
       <Stat label="Total" value={formatPence(totals.total)} strong />
       <Stat label="Cash" value={formatPence(totals.cash)} />
       <Stat label="Card" value={formatPence(totals.card)} />
-      <Stat label="Sales" value={String(totals.count)} className="hidden sm:block" />
+      <Stat label="In till" value={formatPence(totals.expectedDrawer)} className="hidden sm:block" />
+      <Stat label="Sales" value={String(totals.count)} className="hidden lg:block" />
     </button>
   );
 }
