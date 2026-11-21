@@ -45,7 +45,8 @@ shows each cashier's takings.
 **Where the till's Google sign-in is set up:**
 
 - **Google account:** the Wardrobe to Wallet Google account (not the owner's
-  personal Gmail, which holds the Tax Planner's project).
+  personal Gmail, which holds the David's Apps, Tax Planner and Stock List
+  projects used by the other apps).
 - **Google Cloud project:** **Till** (project ID `till-515322`), used only by
   the till. Keep it **Published** (Google Auth Platform > Audience):
   in Testing, sign-ins lapse after 7 days.
