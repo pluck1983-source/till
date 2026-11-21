@@ -16,7 +16,7 @@
  *
  * Every device applies the same rules, so they all end up with the same data.
  */
-import { dayTotals, newId, type ClosedDay, type Day, type QuickItem, type Sale } from './model';
+import { dayTotals, newId, type CardFeeRate, type ClosedDay, type Day, type QuickItem, type Sale } from './model';
 
 export interface DayRecord extends Day {
   /** When the float was last changed - the newest float wins */
@@ -33,6 +33,9 @@ export interface SharedData {
   days: Record<string, DayRecord>;
   quickItems: QuickItem[];
   quickItemsUpdatedAt: string;
+  /** Card fee rate, shared by every device; the newest change wins */
+  cardFeeRate?: CardFeeRate;
+  cardFeeRateUpdatedAt?: string;
 }
 
 const MAX_CLOSED_DAYS = 400;
@@ -90,12 +93,14 @@ export function mergeShared(a: SharedData, b: SharedData): SharedData {
     a.quickItemsUpdatedAt === b.quickItemsUpdatedAt
       ? JSON.stringify(a.quickItems) >= JSON.stringify(b.quickItems) ? a : b
       : a.quickItemsUpdatedAt > b.quickItemsUpdatedAt ? a : b;
+  const fee = (a.cardFeeRateUpdatedAt ?? '') >= (b.cardFeeRateUpdatedAt ?? '') ? a : b;
   return normalize({
     app: 'till',
     version: 3,
     days,
     quickItems: quick.quickItems,
     quickItemsUpdatedAt: quick.quickItemsUpdatedAt,
+    ...(fee.cardFeeRate ? { cardFeeRate: fee.cardFeeRate, cardFeeRateUpdatedAt: fee.cardFeeRateUpdatedAt } : {}),
   });
 }
 
@@ -204,6 +209,6 @@ function canonical(value: unknown): string {
 
 /** Stable text of the data, for telling whether a merge changed anything. */
 export function fingerprint(data: SharedData): string {
-  return canonical([data.days, data.quickItems, data.quickItemsUpdatedAt]);
+  return canonical([data.days, data.quickItems, data.quickItemsUpdatedAt, data.cardFeeRate, data.cardFeeRateUpdatedAt]);
 }
 

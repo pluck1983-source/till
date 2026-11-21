@@ -44,7 +44,7 @@ export default function TodayView({ till }: { till: Till }) {
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
           <TotalTile label="Total takings" value={formatPence(totals.total)} tone="total" />
           <TotalTile label="Cash" value={formatPence(totals.cash)} tone="cash" />
-          <TotalTile label="Card" value={formatPence(totals.card)} tone="card" />
+          <TotalTile label="Card" value={formatPence(totals.card)} tone="card" note={totals.cardFees > 0 ? `fees −${formatPence(totals.cardFees)} (est.)` : undefined} />
           <TotalTile label="Cash in till" value={formatPence(totals.expectedDrawer)} />
         </div>
 
@@ -110,6 +110,11 @@ export default function TodayView({ till }: { till: Till }) {
               <span>Cash: <strong>{formatPence(totals.cash)}</strong></span>
               <span>Card: <strong>{formatPence(totals.card)}</strong></span>
             </div>
+            {totals.cardFees > 0 && (
+              <p className="tabular text-xs text-slate-500">
+                Card fees (est.) −{formatPence(totals.cardFees)} · takings after fees {formatPence(totals.total - totals.cardFees)}
+              </p>
+            )}
             <div className="flex gap-2">
               <button onClick={() => setClosing(false)} className="h-12 flex-1 rounded-xl bg-slate-200 font-semibold dark:bg-slate-800">
                 Cancel

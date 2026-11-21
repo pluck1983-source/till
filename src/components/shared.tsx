@@ -44,7 +44,18 @@ export function Card({ children, className = '' }: { children: ReactNode; classN
   );
 }
 
-export function TotalTile({ label, value, tone = 'plain' }: { label: string; value: string; tone?: 'plain' | 'cash' | 'card' | 'total' }) {
+export function TotalTile({
+  label,
+  value,
+  tone = 'plain',
+  note,
+}: {
+  label: string;
+  value: string;
+  tone?: 'plain' | 'cash' | 'card' | 'total';
+  /** Small line under the figure, e.g. card fees */
+  note?: string;
+}) {
   const toneCls = {
     plain: 'bg-white dark:bg-slate-900',
     total: 'bg-brand-600 text-white',
@@ -55,6 +66,7 @@ export function TotalTile({ label, value, tone = 'plain' }: { label: string; val
     <div className={`tabular rounded-2xl border border-brand-100 p-3 dark:border-brand-950 ${toneCls}`}>
       <p className="text-xs font-semibold uppercase tracking-wide opacity-75">{label}</p>
       <p className="text-2xl font-bold md:text-3xl">{value}</p>
+      {note && <p className="text-xs opacity-75">{note}</p>}
     </div>
   );
 }

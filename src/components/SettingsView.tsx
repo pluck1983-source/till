@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Till } from '../lib/useTill';
-import { formatPence, newId } from '../lib/model';
+import { cardFee, formatPence, newId } from '../lib/model';
 import { Card, MoneyInput } from './shared';
 
 export default function SettingsView({ till }: { till: Till }) {
@@ -10,6 +10,7 @@ export default function SettingsView({ till }: { till: Till }) {
         <h1 className="text-xl font-bold">Settings</h1>
         <DeviceCard till={till} />
         <QuickItemsEditor till={till} />
+        <CardFeeCard till={till} />
         <GoogleCard till={till} />
         <ResetCard till={till} />
       </div>
@@ -194,6 +195,73 @@ function ResetCard({ till }: { till: Till }) {
           </button>
         </>
       )}
+    </Card>
+  );
+}
+
+function CardFeeCard({ till }: { till: Till }) {
+  const rate = till.state.cardFeeRate;
+  const [percent, setPercent] = useState(rate ? String(rate.percent) : '');
+  const [fixed, setFixed] = useState<number | undefined>(rate?.fixed || undefined);
+  const [saved, setSaved] = useState(false);
+  const pct = Number(percent);
+  const valid = percent === '' || (!Number.isNaN(pct) && pct >= 0 && pct < 20);
+  const example = valid && (pct > 0 || fixed) ? cardFee(1000, { percent: pct || 0, fixed: fixed ?? 0 }) : 0;
+
+  return (
+    <Card className="space-y-3">
+      <div>
+        <h2 className="font-bold">Card fees</h2>
+        <p className="text-sm text-slate-500">
+          What your card reader provider charges, so Today and History can show card fees and your takings after them. It's
+          an estimate - your provider's statement is the final word. A new rate applies to card sales from then on; earlier
+          sales keep the fee they had.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1">
+          <input
+            inputMode="decimal"
+            value={percent}
+            onChange={(e) => {
+              setPercent(e.target.value.replace(/[^\d.]/g, ''));
+              setSaved(false);
+            }}
+            placeholder="e.g. 1.69"
+            aria-label="Card fee percent"
+            className="tabular w-24 rounded-lg border border-slate-300 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-900"
+          />
+          <span>%</span>
+        </label>
+        <span className="text-slate-500">+</span>
+        <MoneyInput
+          value={fixed}
+          onChange={(v) => {
+            setFixed(v);
+            setSaved(false);
+          }}
+          className="w-28"
+          ariaLabel="Fixed fee per card payment"
+        />
+        <span className="text-sm text-slate-500">per card payment (optional)</span>
+      </div>
+      {example > 0 && (
+        <p className="tabular text-sm text-slate-600 dark:text-slate-400">A £10.00 card sale costs about {formatPence(example)}.</p>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          disabled={!valid}
+          onClick={() => {
+            till.setCardFeeRate(pct > 0 || fixed ? { percent: pct || 0, fixed: fixed ?? 0 } : null);
+            setSaved(true);
+          }}
+          className="rounded-lg bg-brand-600 px-4 py-2 font-semibold text-white disabled:opacity-40"
+        >
+          Save card fee
+        </button>
+        {saved && <span className="text-sm text-emerald-700 dark:text-emerald-300">Saved{till.state.driveLinked ? ' - shared with every device' : ''}.</span>}
+        {!valid && <span className="text-sm text-amber-700">Enter a percentage under 20, e.g. 1.69</span>}
+      </div>
     </Card>
   );
 }

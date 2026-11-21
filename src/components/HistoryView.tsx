@@ -64,7 +64,7 @@ export function DaySummary({ day }: { day: ClosedDay }) {
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         <TotalTile label="Total takings" value={formatPence(t.total)} tone="total" />
         <TotalTile label="Cash" value={formatPence(t.cash)} tone="cash" />
-        <TotalTile label="Card" value={formatPence(t.card)} tone="card" />
+        <TotalTile label="Card" value={formatPence(t.card)} tone="card" note={t.cardFees > 0 ? `fees −${formatPence(t.cardFees)} (est.)` : undefined} />
         <TotalTile label="Sales" value={String(t.count)} />
       </div>
       <Card className="tabular grid grid-cols-1 gap-1 text-sm md:grid-cols-2">
@@ -77,6 +77,12 @@ export function DaySummary({ day }: { day: ClosedDay }) {
               Over / short: <strong>{formatPence(day.countedCash - t.expectedDrawer)}</strong>
             </span>
           </>
+        )}
+        {t.cardFees > 0 && (
+          <span>
+            Card fees (est.): <strong>−{formatPence(t.cardFees)}</strong> · after fees{' '}
+            <strong>{formatPence(t.total - t.cardFees)}</strong>
+          </span>
         )}
         {t.voidedCount > 0 && <span>Voided sales: {t.voidedCount}</span>}
         <span>

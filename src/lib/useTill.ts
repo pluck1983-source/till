@@ -7,6 +7,7 @@ import {
   newId,
   remaining,
   tradingDate,
+  type CardFeeRate,
   type ClosedDay,
   type Payment,
   type QuickItem,
@@ -212,7 +213,7 @@ export function useTill() {
       if (method === 'cash') {
         ({ payment, change } = applyCash(owed, amount && amount > 0 ? amount : owed));
       } else {
-        payment = applyCard(owed, amount);
+        payment = applyCard(owed, amount, s.shared.cardFeeRate);
       }
       const payments = [...s.current.payments, payment];
       if (remaining(s.current.lines, payments) > 0) {
@@ -269,6 +270,17 @@ export function useTill() {
 
   const setDeviceName = useCallback(
     (name: string) => update((s) => ({ ...s, deviceName: name.trim() || defaultDeviceName() })),
+    [update],
+  );
+
+  const setCardFeeRate = useCallback(
+    (rate: CardFeeRate | null) =>
+      update((s) => {
+        const shared = { ...s.shared, cardFeeRateUpdatedAt: new Date().toISOString() };
+        if (rate) shared.cardFeeRate = rate;
+        else delete shared.cardFeeRate;
+        return { ...s, shared };
+      }),
     [update],
   );
 
@@ -464,6 +476,7 @@ export function useTill() {
       day: openDay(store.shared),
       history: closedDays(store.shared),
       quickItems: store.shared.quickItems,
+      cardFeeRate: store.shared.cardFeeRate,
       current: store.current,
       outbox: store.outbox,
       driveLinked: store.driveLinked,
@@ -490,6 +503,7 @@ export function useTill() {
     setFloat,
     setDeviceName,
     setQuickItems,
+    setCardFeeRate,
     endDay,
     connectDrive,
     reconnectDrive: () => drive.signIn(false),

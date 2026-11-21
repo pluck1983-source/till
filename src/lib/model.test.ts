@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyCard,
   applyCash,
+  cardFee,
   cashSuggestions,
   closeDay,
   dayToCsv,
@@ -74,6 +75,39 @@ describe('sale maths', () => {
   });
 });
 
+describe('card fees', () => {
+  it('works out percentage plus fixed, rounded to the penny', () => {
+    expect(cardFee(1000, { percent: 1.69, fixed: 0 })).toBe(17);
+    expect(cardFee(1000, { percent: 1.75, fixed: 20 })).toBe(38);
+    expect(cardFee(1000, undefined)).toBe(0);
+  });
+
+  it('stamps the fee on the card payment and totals it, leaving voided sales out', () => {
+    const rate = { percent: 1.69, fixed: 0 };
+    const d: Day = {
+      id: 'x',
+      openedAt: '2026-11-21T09:00:00Z',
+      float: 0,
+      sales: [
+        { id: 'a', lines: [line(2000)], payments: [applyCard(2000, undefined, rate)], completedAt: '2026-11-21T10:00:00Z' },
+        { id: 'b', lines: [line(500)], payments: [applyCash(500, 500).payment], completedAt: '2026-11-21T10:05:00Z' },
+        {
+          id: 'c',
+          lines: [line(1000)],
+          payments: [applyCard(1000, undefined, rate)],
+          completedAt: '2026-11-21T10:10:00Z',
+          voidedAt: '2026-11-21T10:11:00Z',
+        },
+      ],
+    };
+    expect(d.sales[0].payments[0].fee).toBe(34);
+    expect(dayTotals(d).cardFees).toBe(34);
+    const csv = dayToCsv(closeDay(d));
+    expect(csv).toContain('Card fees (estimated),-0.34');
+    expect(csv).toContain('Takings after card fees,24.66');
+  });
+});
+
 describe('day totals', () => {
   const day: Day = {
     id: 'd',
@@ -100,6 +134,7 @@ describe('day totals', () => {
       cash: 1000,
       card: 700,
       expectedDrawer: 6000,
+      cardFees: 0,
     });
   });
 

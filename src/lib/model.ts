@@ -22,6 +22,22 @@ export interface Payment {
   amount: number;
   /** Cash handed over, in pence - only for cash, and only when change was given */
   tendered?: number;
+  /** Estimated card processing fee, in pence - worked out at the rate set when the sale was taken */
+  fee?: number;
+}
+
+/** What the card provider charges: a percentage of each card payment plus an optional fixed amount. */
+export interface CardFeeRate {
+  /** e.g. 1.69 for 1.69% */
+  percent: number;
+  /** Fixed charge per card payment, in pence */
+  fixed: number;
+}
+
+/** Estimated fee on one card payment, in pence. */
+export function cardFee(amount: number, rate: CardFeeRate | undefined): number {
+  if (!rate || amount <= 0) return 0;
+  return Math.round((amount * rate.percent) / 100) + rate.fixed;
 }
 
 export interface Sale {
@@ -57,6 +73,8 @@ export interface DayTotals {
   card: number;
   /** float + cash takings: what should be in the drawer */
   expectedDrawer: number;
+  /** Estimated card processing fees on the day's card payments */
+  cardFees: number;
 }
 
 export interface ClosedDay extends Day {
@@ -104,9 +122,10 @@ export function applyCash(owed: number, tendered: number): { payment: Payment; c
 }
 
 /** Card takes the amount given, capped at what's owed (a card can't give change). */
-export function applyCard(owed: number, amount?: number): Payment {
+export function applyCard(owed: number, amount?: number, rate?: CardFeeRate): Payment {
   const take = amount && amount > 0 ? Math.min(amount, owed) : owed;
-  return { id: newId(), method: 'card', amount: take };
+  const fee = cardFee(take, rate);
+  return { id: newId(), method: 'card', amount: take, ...(fee > 0 ? { fee } : {}) };
 }
 
 export function dayTotals(day: Pick<Day, 'sales' | 'float'>): DayTotals {
@@ -114,6 +133,7 @@ export function dayTotals(day: Pick<Day, 'sales' | 'float'>): DayTotals {
   let voidedCount = 0;
   let cash = 0;
   let card = 0;
+  let cardFees = 0;
   for (const sale of day.sales) {
     if (sale.voidedAt) {
       voidedCount++;
@@ -122,10 +142,13 @@ export function dayTotals(day: Pick<Day, 'sales' | 'float'>): DayTotals {
     count++;
     for (const p of sale.payments) {
       if (p.method === 'cash') cash += p.amount;
-      else card += p.amount;
+      else {
+        card += p.amount;
+        cardFees += p.fee ?? 0;
+      }
     }
   }
-  return { count, voidedCount, total: cash + card, cash, card, expectedDrawer: day.float + cash };
+  return { count, voidedCount, total: cash + card, cash, card, expectedDrawer: day.float + cash, cardFees };
 }
 
 /**
@@ -247,6 +270,10 @@ export function dayToCsv(day: ClosedDay): string {
   rows.push(['Total takings', pounds(t.total)]);
   rows.push(['Cash', pounds(t.cash)]);
   rows.push(['Card', pounds(t.card)]);
+  if (t.cardFees > 0) {
+    rows.push(['Card fees (estimated)', pounds(-t.cardFees)]);
+    rows.push(['Takings after card fees', pounds(t.total - t.cardFees)]);
+  }
   rows.push(['Opening float', pounds(day.float)]);
   rows.push(['Cash in till (float + cash)', pounds(t.expectedDrawer)]);
   if (day.countedCash !== undefined) {

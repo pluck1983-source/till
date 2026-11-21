@@ -73,6 +73,13 @@ describe('merging two cashiers', () => {
     expect(openDay(healed).sales.map((s) => s.id)).toEqual(['a', 'b']);
   });
 
+  it('shares the newest card fee rate', () => {
+    const a = { ...base([]), cardFeeRate: { percent: 1.69, fixed: 0 }, cardFeeRateUpdatedAt: '2026-11-21T09:00:00Z' };
+    const b = { ...base([]), cardFeeRate: { percent: 1.75, fixed: 10 }, cardFeeRateUpdatedAt: '2026-11-21T10:00:00Z' };
+    expect(mergeShared(a, b).cardFeeRate).toEqual({ percent: 1.75, fixed: 10 });
+    expect(mergeShared(b, a).cardFeeRate).toEqual({ percent: 1.75, fixed: 10 });
+  });
+
   it('converts the old on-device format', () => {
     const data = fromLegacy({
       day: { id: 'now', openedAt: '2026-11-21T08:00:00Z', float: 0, sales: [] },
@@ -83,7 +90,7 @@ describe('merging two cashiers', () => {
           float: 5000,
           sales: [sale('o', '2026-11-20T09:00:00Z')],
           closedAt: '2026-11-20T17:00:00Z',
-          totals: { count: 1, voidedCount: 0, total: 100, cash: 100, card: 0, expectedDrawer: 5100 },
+          totals: { count: 1, voidedCount: 0, total: 100, cash: 100, card: 0, expectedDrawer: 5100, cardFees: 0 },
           till: 'iPad',
         },
       ],
