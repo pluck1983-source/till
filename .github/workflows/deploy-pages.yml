@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - claude/sharp-lovelace-y8cswh
   workflow_dispatch:
 
 permissions:
