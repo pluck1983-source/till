@@ -15,6 +15,8 @@ export default function TillView({ till }: { till: Till }) {
   const hasSale = lines.length > 0;
 
   const press = (key: string) => {
+    // C with nothing keyed in also clears the last sale's Paid/Change panel.
+    if (key === 'clear' && entry === '') till.dismissChange();
     if (key === '00') setEntry((t) => keypadPress(keypadPress(t, '0'), '0'));
     else setEntry((t) => keypadPress(t, key));
   };
@@ -51,7 +53,7 @@ export default function TillView({ till }: { till: Till }) {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3 tall:px-4">
           {!hasSale && !till.state.day.floatSet && till.state.day.sales.length === 0 && <FloatPrompt till={till} />}
-          {!hasSale && till.lastChange && <ChangeDue change={till.lastChange.change} total={till.lastChange.total} />}
+          {!hasSale && till.lastChange && <ChangeDue change={till.lastChange.change} total={till.lastChange.total} onDone={till.dismissChange} />}
           {!hasSale && !till.lastChange && (
             <p className="py-10 text-center text-slate-400">Key in a price and tap Add item</p>
           )}
@@ -191,7 +193,7 @@ function QuickCash({ label, onClick }: { label: string; amount: number; onClick:
   );
 }
 
-function ChangeDue({ change, total }: { change: number; total: number }) {
+function ChangeDue({ change, total, onDone }: { change: number; total: number; onDone: () => void }) {
   return (
     <div className="tabular my-6 rounded-2xl bg-emerald-50 p-6 text-center short:my-2 short:p-3 dark:bg-emerald-950">
       <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
@@ -201,7 +203,12 @@ function ChangeDue({ change, total }: { change: number; total: number }) {
         {formatPence(change > 0 ? change : total)}
       </p>
       {change > 0 && <p className="mt-2 text-slate-600 dark:text-slate-400">Sale total {formatPence(total)}</p>}
-      <p className="mt-3 text-sm text-slate-500">Key in the next item to start a new sale</p>
+      <button
+        onClick={onDone}
+        className="mt-4 h-12 min-w-40 rounded-xl bg-emerald-600 px-8 text-lg font-bold text-white active:scale-95 short:mt-2 short:h-10"
+      >
+        OK
+      </button>
     </div>
   );
 }

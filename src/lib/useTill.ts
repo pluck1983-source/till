@@ -463,6 +463,7 @@ export function useTill() {
     sync,
     syncError,
     lastChange,
+    dismissChange: () => setLastChange(null),
     driveConfigured: drive.driveConfigured,
     addLine,
     changeQty,
