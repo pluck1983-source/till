@@ -42,6 +42,17 @@ to a simultaneous save comes back on the next round.
 device just after the close moves to the next day. **Today → By cashier**
 shows each cashier's takings.
 
+**Where the till's Google sign-in is set up:**
+
+- **Google account:** the Wardrobe to Wallet Google account (not the owner's
+  personal Gmail, which holds the Tax Planner's project).
+- **Google Cloud project:** **Till** (project ID `till-515322`), used only by
+  the till. Keep it **Published** (Google Auth Platform > Audience):
+  in Testing, sign-ins lapse after 7 days.
+- **OAuth client:** the web client in that project, ID in `.env`.
+- **Drive data:** the `Till records` folder in the Drive of whichever Google
+  account the devices sign in with.
+
 Google sign-in needs `VITE_GOOGLE_CLIENT_ID` in `.env` (an OAuth "Web
 application" client with `https://pluck1983-source.github.io` as an authorised
 JavaScript origin and `https://pluck1983-source.github.io/till/` as an
