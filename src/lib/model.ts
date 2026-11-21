@@ -128,14 +128,12 @@ export function dayTotals(day: Pick<Day, 'sales' | 'float'>): DayTotals {
   return { count, voidedCount, total: cash + card, cash, card, expectedDrawer: day.float + cash };
 }
 
-/** Quick cash notes worth offering for an amount owed: the next whole pound and common notes above it. */
+/**
+ * One-tap note buttons: always £5, £10, £20, £50. A note smaller than what's
+ * owed counts as part-payment, so tapping £20 twice takes £40.
+ */
 export function cashSuggestions(owed: number): number[] {
-  if (owed <= 0) return [];
-  const out = new Set<number>();
-  const nextPound = Math.ceil(owed / 100) * 100;
-  if (nextPound !== owed) out.add(nextPound);
-  for (const note of [500, 1000, 2000, 5000]) if (note > owed) out.add(note);
-  return [...out].sort((a, b) => a - b).slice(0, 4);
+  return owed > 0 ? [500, 1000, 2000, 5000] : [];
 }
 
 /**

@@ -31,16 +31,16 @@ export default function TillView({ till }: { till: Till }) {
   };
 
   return (
-    <div className="flex h-full flex-col md:grid md:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
+    <div className="flex h-full flex-col split:grid split:grid-cols-[minmax(0,1fr)_minmax(300px,420px)]">
       {/* Sale */}
-      <section className="flex min-h-0 flex-1 flex-col border-brand-100 md:border-r dark:border-brand-950">
+      <section className="flex min-h-0 flex-1 flex-col border-brand-100 split:border-r dark:border-brand-950">
         {till.state.quickItems.length > 0 && (
-          <div className="flex shrink-0 gap-2 overflow-x-auto p-2 md:flex-wrap md:p-3">
+          <div className="flex shrink-0 gap-2 overflow-x-auto p-2 short:p-1.5 tall:flex-wrap tall:p-3">
             {till.state.quickItems.map((q) => (
               <button
                 key={q.id}
                 onClick={() => addItem(q.price, q.label)}
-                className="shrink-0 rounded-xl border border-brand-200 bg-white px-3 py-2 text-left shadow-sm active:bg-brand-50 md:min-w-28 md:py-3 dark:border-brand-900 dark:bg-slate-900"
+                className="shrink-0 rounded-xl border border-brand-200 bg-white px-3 py-2 text-left shadow-sm active:bg-brand-50 short:py-1 tall:min-w-28 tall:py-3 dark:border-brand-900 dark:bg-slate-900"
               >
                 <span className="block text-sm font-semibold">{q.label}</span>
                 <span className="tabular block text-xs text-slate-500">{formatPence(q.price)}</span>
@@ -49,7 +49,7 @@ export default function TillView({ till }: { till: Till }) {
           </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 md:px-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 tall:px-4">
           {!hasSale && !till.state.day.floatSet && till.state.day.sales.length === 0 && <FloatPrompt till={till} />}
           {!hasSale && till.lastChange && <ChangeDue change={till.lastChange.change} total={till.lastChange.total} />}
           {!hasSale && !till.lastChange && (
@@ -86,7 +86,7 @@ export default function TillView({ till }: { till: Till }) {
         </div>
 
         {hasSale && (
-          <div className="tabular shrink-0 border-t border-brand-100 bg-white px-3 py-2 md:px-4 md:py-3 dark:border-brand-950 dark:bg-slate-950">
+          <div className="tabular shrink-0 border-t border-brand-100 bg-white px-3 py-2 short:py-1 tall:px-4 tall:py-3 dark:border-brand-950 dark:bg-slate-950">
             <Row label="Subtotal" value={formatPence(subtotal)} big={payments.length === 0} />
             {payments.map((p) => (
               <div key={p.id} className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-400">
@@ -108,17 +108,17 @@ export default function TillView({ till }: { till: Till }) {
       </section>
 
       {/* Keypad */}
-      <section className="pb-2 shrink-0 bg-white p-2 md:flex md:flex-col md:justify-end md:p-4 dark:bg-slate-950">
-        <div className="tabular mb-2 flex h-14 items-center justify-end rounded-xl bg-brand-50 px-4 text-3xl font-bold md:h-20 md:text-4xl dark:bg-brand-950">
+      <section className="shrink-0 bg-white p-2 split:flex split:min-h-0 split:flex-col split:justify-end short:justify-start short:p-1.5 tall:p-4 dark:bg-slate-950">
+        <div className="tabular mb-2 flex h-14 shrink-0 items-center justify-end rounded-xl bg-brand-50 px-4 text-3xl font-bold short:mb-1 short:h-9 short:text-2xl tall:h-20 tall:text-4xl dark:bg-brand-950">
           {entry ? `£${entry}` : <span className="text-brand-300 dark:text-brand-800">£0.00</span>}
         </div>
 
-        <div className="grid grid-cols-4 gap-1.5 md:gap-2">
+        <div className="grid grid-cols-4 gap-1.5 short:min-h-0 short:flex-1 short:grid-rows-4 short:gap-1 tall:gap-2">
           {KEYS.map((k) => (
             <button
               key={k}
               onClick={() => press(k)}
-              className={`h-12 rounded-xl text-xl font-semibold active:scale-95 md:h-16 md:text-2xl ${
+              className={`h-12 rounded-xl text-xl font-semibold active:scale-95 short:h-auto short:min-h-8 short:text-lg tall:h-16 tall:text-2xl ${
                 k === 'back' || k === 'clear'
                   ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
                   : 'bg-slate-100 dark:bg-slate-900'
@@ -130,38 +130,38 @@ export default function TillView({ till }: { till: Till }) {
           <button
             onClick={() => addItem()}
             disabled={entryPence <= 0}
-            className="col-span-2 h-12 rounded-xl bg-brand-600 text-lg font-bold text-white active:scale-95 disabled:opacity-40 md:h-16 md:text-xl"
+            className="col-span-2 h-12 rounded-xl bg-brand-600 text-lg font-bold text-white active:scale-95 disabled:opacity-40 short:h-auto short:min-h-8 short:text-base tall:h-16 tall:text-xl"
           >
             Add item
           </button>
         </div>
 
         {owed > 0 && (
-          <div className="mt-2 flex gap-1.5 overflow-x-auto md:gap-2">
+          <div className="mt-2 flex shrink-0 gap-1.5 overflow-x-auto short:mt-1 short:gap-1 tall:gap-2">
             {cashSuggestions(owed).map((a) => (
               <QuickCash key={a} label={formatPence(a).replace('.00', '')} amount={a} onClick={() => pay('cash', a)} />
             ))}
           </div>
         )}
 
-        <div className="mt-2 grid grid-cols-2 gap-1.5 md:gap-2">
+        <div className="mt-2 grid shrink-0 grid-cols-2 gap-1.5 short:mt-1 short:gap-1 tall:gap-2">
           <button
             onClick={() => pay('cash')}
             disabled={owed <= 0}
-            className="h-14 rounded-xl bg-emerald-600 text-lg font-bold text-white active:scale-95 disabled:opacity-40 md:h-20 md:text-xl"
+            className="h-14 rounded-xl bg-emerald-600 text-lg font-bold text-white active:scale-95 disabled:opacity-40 short:flex short:h-10 short:items-center short:justify-center short:gap-2 short:text-base tall:h-20 tall:text-xl"
           >
             Cash
-            <span className="block text-xs font-medium opacity-90">
+            <span className="block text-xs font-medium opacity-90 short:inline">
               {owed > 0 ? (entryPence ? `${formatPence(entryPence)} given` : formatPence(owed)) : ' '}
             </span>
           </button>
           <button
             onClick={() => pay('card')}
             disabled={owed <= 0}
-            className="h-14 rounded-xl bg-brand-800 text-lg font-bold text-white active:scale-95 disabled:opacity-40 md:h-20 md:text-xl"
+            className="h-14 rounded-xl bg-brand-800 text-lg font-bold text-white active:scale-95 disabled:opacity-40 short:flex short:h-10 short:items-center short:justify-center short:gap-2 short:text-base tall:h-20 tall:text-xl"
           >
             Card
-            <span className="block text-xs font-medium opacity-90">
+            <span className="block text-xs font-medium opacity-90 short:inline">
               {owed > 0 ? formatPence(entryPence && entryPence < owed ? entryPence : owed) : ' '}
             </span>
           </button>
@@ -173,7 +173,7 @@ export default function TillView({ till }: { till: Till }) {
 
 function Row({ label, value, big }: { label: string; value: string; big?: boolean }) {
   return (
-    <div className={`flex items-baseline justify-between ${big ? 'text-2xl font-bold md:text-3xl' : 'font-semibold'}`}>
+    <div className={`flex items-baseline justify-between ${big ? 'text-2xl font-bold short:text-xl tall:text-3xl' : 'font-semibold'}`}>
       <span>{label}</span>
       <span>{value}</span>
     </div>
@@ -184,7 +184,7 @@ function QuickCash({ label, onClick }: { label: string; amount: number; onClick:
   return (
     <button
       onClick={onClick}
-      className="tabular h-11 flex-1 shrink-0 rounded-xl border-2 border-emerald-500 px-3 font-semibold whitespace-nowrap text-emerald-700 active:bg-emerald-50 md:h-12 dark:text-emerald-300 dark:active:bg-emerald-950"
+      className="tabular h-11 flex-1 shrink-0 rounded-xl border-2 border-emerald-500 px-3 font-semibold whitespace-nowrap text-emerald-700 active:bg-emerald-50 short:h-8 tall:h-12 dark:text-emerald-300 dark:active:bg-emerald-950"
     >
       {label}
     </button>
@@ -193,11 +193,11 @@ function QuickCash({ label, onClick }: { label: string; amount: number; onClick:
 
 function ChangeDue({ change, total }: { change: number; total: number }) {
   return (
-    <div className="tabular my-6 rounded-2xl bg-emerald-50 p-6 text-center dark:bg-emerald-950">
+    <div className="tabular my-6 rounded-2xl bg-emerald-50 p-6 text-center short:my-2 short:p-3 dark:bg-emerald-950">
       <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
         {change > 0 ? 'Change due' : 'Paid'}
       </p>
-      <p className="text-5xl font-bold text-emerald-700 md:text-6xl dark:text-emerald-200">
+      <p className="text-5xl font-bold text-emerald-700 short:text-3xl tall:text-6xl dark:text-emerald-200">
         {formatPence(change > 0 ? change : total)}
       </p>
       {change > 0 && <p className="mt-2 text-slate-600 dark:text-slate-400">Sale total {formatPence(total)}</p>}
@@ -211,7 +211,7 @@ function FloatPrompt({ till }: { till: Till }) {
   const [float, setFloat] = useState<number | undefined>(undefined);
   const last = till.state.history[0]?.float ?? 0;
   return (
-    <div className="my-4 rounded-2xl border border-brand-200 bg-white p-4 shadow-sm dark:border-brand-900 dark:bg-slate-900">
+    <div className="my-4 rounded-2xl border border-brand-200 bg-white p-4 shadow-sm short:my-2 short:p-3 dark:border-brand-900 dark:bg-slate-900">
       <p className="font-bold">Cash float in the till today?</p>
       <p className="mb-3 text-sm text-slate-500">
         Added to your cash takings so End of day shows the total cash that should be in the till.

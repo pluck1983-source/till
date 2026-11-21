@@ -1,6 +1,20 @@
 @import "tailwindcss";
 
 /* Colours from the cash4stuff app: pink for actions, teal for money in */
+/* Side-by-side till layout: tablets, and phones turned sideways */
+@custom-variant split {
+  @media (min-width: 768px) {
+    @slot;
+  }
+  @media (orientation: landscape) and (min-width: 560px) {
+    @slot;
+  }
+}
+/* Room for the large keypad (tablets) */
+@custom-variant tall (@media (min-width: 768px) and (min-height: 501px));
+/* Phones in landscape: everything compact so the till fits without scrolling */
+@custom-variant short (@media (max-height: 500px));
+
 @theme {
   --color-brand-50: #fdf0f4;
   --color-brand-100: #fbdde7;

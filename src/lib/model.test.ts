@@ -60,9 +60,17 @@ describe('sale maths', () => {
     expect(applyCard(500, 200).amount).toBe(200);
   });
 
-  it('suggests sensible notes', () => {
-    expect(cashSuggestions(1350)).toEqual([1400, 2000, 5000]);
-    expect(cashSuggestions(300)).toEqual([500, 1000, 2000, 5000]);
+  it('always offers the four notes', () => {
+    expect(cashSuggestions(1350)).toEqual([500, 1000, 2000, 5000]);
+    expect(cashSuggestions(0)).toEqual([]);
+  });
+
+  it('two taps of £20 on £35 owed takes £40 and gives £5 change', () => {
+    const first = applyCash(3500, 2000);
+    expect(first.change).toBe(0);
+    const second = applyCash(3500 - first.payment.amount, 2000);
+    expect(second.payment.amount).toBe(1500);
+    expect(second.change).toBe(500);
   });
 });
 
