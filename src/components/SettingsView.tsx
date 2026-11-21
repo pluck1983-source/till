@@ -11,6 +11,7 @@ export default function SettingsView({ till }: { till: Till }) {
         <DeviceCard till={till} />
         <QuickItemsEditor till={till} />
         <GoogleCard till={till} />
+        <ResetCard till={till} />
       </div>
     </div>
   );
@@ -159,6 +160,39 @@ function GoogleCard({ till }: { till: Till }) {
         <button onClick={till.connectDrive} className="rounded-lg bg-brand-600 px-4 py-2 font-semibold text-white">
           Connect Google account
         </button>
+      )}
+    </Card>
+  );
+}
+
+function ResetCard({ till }: { till: Till }) {
+  const sales = till.state.day.sales.length + till.state.history.reduce((n, d) => n + d.sales.length, 0);
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-bold">Reset till</h2>
+      {till.state.driveLinked ? (
+        <p className="text-sm text-slate-500">
+          This device is connected to Google Drive, so a reset here would just copy everything back from Drive. Disconnect
+          first if you really want to start again - nothing in your Drive is deleted either way.
+        </p>
+      ) : (
+        <>
+          <p className="text-sm text-slate-500">
+            Clears this device back to a brand-new till: today's sales, past days, quick items, float and cashier name
+            {sales > 0 ? ` (${sales} sale${sales === 1 ? '' : 's'} in total)` : ''}. Use it to remove test sales before you
+            start trading. It can't be undone.
+          </p>
+          <button
+            onClick={() => {
+              if (!confirm('Delete every sale, past day and quick item on this device?')) return;
+              if (!confirm('Are you sure? This cannot be undone.')) return;
+              till.resetTill();
+            }}
+            className="rounded-lg border-2 border-red-600 px-4 py-2 font-semibold text-red-700 dark:text-red-400"
+          >
+            Reset till…
+          </button>
+        </>
       )}
     </Card>
   );

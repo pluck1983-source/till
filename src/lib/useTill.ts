@@ -131,7 +131,10 @@ export function useTill() {
   const storeRef = useRef(store);
   storeRef.current = store;
 
+  const resetting = useRef(false);
+
   useEffect(() => {
+    if (resetting.current) return;
     try {
       localStorage.setItem(KEY, JSON.stringify(store));
     } catch {
@@ -442,6 +445,19 @@ export function useTill() {
     setSync('off');
   }, []);
 
+  /**
+   * Wipes the till on this device only - sales, history, quick items, float,
+   * cashier name - and reloads it empty. Only touches the till's own storage
+   * keys, never other apps on the same site.
+   */
+  const resetTill = useCallback(() => {
+    resetting.current = true;
+    for (const store of [localStorage, sessionStorage]) {
+      for (const k of Object.keys(store)) if (k.startsWith('till-')) store.removeItem(k);
+    }
+    window.location.reload();
+  }, []);
+
   /** What the screens read: today's open day and history, derived from the shared data. */
   const state = useMemo(
     () => ({
@@ -479,6 +495,7 @@ export function useTill() {
     reconnectDrive: () => drive.signIn(false),
     disconnectDrive,
     syncNow: () => flush(true),
+    resetTill,
   };
 }
 
