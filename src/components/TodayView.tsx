@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Till } from '../lib/useTill';
-import { dayTotals, formatPence, totalsByCashier, type ClosedDay } from '../lib/model';
+import { cardFee, cardPaymentsWithoutFee, dayTotals, formatPence, totalsByCashier, type ClosedDay } from '../lib/model';
 import { Card, MoneyInput, SaleList, TotalTile } from './shared';
 import { DaySummary } from './HistoryView';
 
@@ -47,6 +47,8 @@ export default function TodayView({ till }: { till: Till }) {
           <TotalTile label="Card" value={formatPence(totals.card)} tone="card" note={totals.cardFees > 0 ? `fees −${formatPence(totals.cardFees)} (est.)` : undefined} />
           <TotalTile label="Cash in till" value={formatPence(totals.expectedDrawer)} />
         </div>
+
+        <MissingFees till={till} />
 
         <Card className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <label className="flex items-center gap-2">
@@ -177,6 +179,39 @@ function ByCashier({ till }: { till: Till }) {
           ))}
         </tbody>
       </table>
+    </Card>
+  );
+}
+
+/** Offers to add the card fee to today's card sales taken before a fee rate was set. */
+function MissingFees({ till }: { till: Till }) {
+  const rate = till.state.cardFeeRate;
+  const missing = cardPaymentsWithoutFee(till.state.day.sales);
+  if (!rate || missing === 0) return null;
+  const amount = till.state.day.sales.reduce(
+    (sum, sale) =>
+      sum +
+      (sale.voidedAt
+        ? 0
+        : sale.payments.reduce((s, p) => s + (p.method === 'card' && p.fee === undefined ? cardFee(p.amount, rate) : 0), 0)),
+    0,
+  );
+  const rateText = `${rate.percent}%${rate.fixed ? ` + ${formatPence(rate.fixed)}` : ''}`;
+  return (
+    <Card className="flex flex-wrap items-center gap-3 border-brand-300 text-sm">
+      <span className="flex-1">
+        {missing} card payment{missing === 1 ? '' : 's'} today {missing === 1 ? 'was' : 'were'} taken before the card fee was
+        set, so {missing === 1 ? 'it has' : 'they have'} no fee recorded.
+      </span>
+      <button
+        onClick={() => {
+          if (confirm(`Add card fees at ${rateText} to ${missing} earlier card payment${missing === 1 ? '' : 's'} today?`))
+            till.addFeesToToday();
+        }}
+        className="tabular rounded-lg bg-brand-600 px-3 py-2 font-semibold text-white"
+      >
+        Add fees at {rateText}{amount > 0 ? ` (−${formatPence(amount)})` : ''}
+      </button>
     </Card>
   );
 }

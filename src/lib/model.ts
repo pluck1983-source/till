@@ -34,6 +34,30 @@ export interface CardFeeRate {
   fixed: number;
 }
 
+/** Card payments in these sales that have no fee recorded (taken before a rate was set). */
+export function cardPaymentsWithoutFee(sales: Sale[]): number {
+  let n = 0;
+  for (const sale of sales) for (const p of sale.payments) if (p.method === 'card' && p.fee === undefined) n++;
+  return n;
+}
+
+/**
+ * Adds the fee at `rate` to every card payment that has none. Sales that
+ * change get a new updatedAt so the change reaches the other devices.
+ */
+export function addMissingCardFees(sales: Sale[], rate: CardFeeRate, now: string): Sale[] {
+  return sales.map((sale) => {
+    if (!sale.payments.some((p) => p.method === 'card' && p.fee === undefined)) return sale;
+    return {
+      ...sale,
+      payments: sale.payments.map((p) =>
+        p.method === 'card' && p.fee === undefined ? { ...p, fee: cardFee(p.amount, rate) } : p,
+      ),
+      updatedAt: now,
+    };
+  });
+}
+
 /** Estimated fee on one card payment, in pence. */
 export function cardFee(amount: number, rate: CardFeeRate | undefined): number {
   if (!rate || amount <= 0) return 0;

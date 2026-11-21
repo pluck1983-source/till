@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   applyCard,
   applyCash,
+  addMissingCardFees,
   cardFee,
+  cardPaymentsWithoutFee,
   cashSuggestions,
   closeDay,
   dayToCsv,
@@ -105,6 +107,25 @@ describe('card fees', () => {
     const csv = dayToCsv(closeDay(d));
     expect(csv).toContain('Card fees (estimated),-0.34');
     expect(csv).toContain('Takings after card fees,24.66');
+  });
+});
+
+describe('adding fees to earlier card sales', () => {
+  it('fills in only card payments with no fee, and marks those sales changed', () => {
+    const rate = { percent: 1.69, fixed: 0 };
+    const sales = [
+      { id: 'a', lines: [line(2000)], payments: [applyCard(2000)], completedAt: '2026-11-21T10:00:00Z' },
+      { id: 'b', lines: [line(500)], payments: [applyCash(500, 500).payment], completedAt: '2026-11-21T10:05:00Z' },
+      { id: 'c', lines: [line(3000)], payments: [applyCard(3000, undefined, { percent: 2, fixed: 0 })], completedAt: '2026-11-21T10:10:00Z' },
+    ];
+    expect(cardPaymentsWithoutFee(sales)).toBe(1);
+    const out = addMissingCardFees(sales, rate, '2026-11-21T12:00:00Z');
+    expect(out[0].payments[0].fee).toBe(34);
+    expect(out[0].updatedAt).toBe('2026-11-21T12:00:00Z');
+    expect(out[1]).toBe(sales[1]);
+    expect(out[2].payments[0].fee).toBe(60); // already had a fee - left alone
+    expect(out[2]).toBe(sales[2]);
+    expect(cardPaymentsWithoutFee(out)).toBe(0);
   });
 });
 

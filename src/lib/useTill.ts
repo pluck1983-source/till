@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyCard,
+  addMissingCardFees,
   applyCash,
   dayToCsv,
   localDate,
@@ -273,6 +274,14 @@ export function useTill() {
     [update],
   );
 
+  /** Adds the current card fee to today's card sales that were taken before a fee rate was set. */
+  const addFeesToToday = useCallback(() => {
+    const rate = storeRef.current.shared.cardFeeRate;
+    if (!rate) return;
+    const now = new Date().toISOString();
+    updateDay((day) => ({ ...day, sales: addMissingCardFees(day.sales, rate, now) }));
+  }, [updateDay]);
+
   const setCardFeeRate = useCallback(
     (rate: CardFeeRate | null) =>
       update((s) => {
@@ -504,6 +513,7 @@ export function useTill() {
     setDeviceName,
     setQuickItems,
     setCardFeeRate,
+    addFeesToToday,
     endDay,
     connectDrive,
     reconnectDrive: () => drive.signIn(false),
