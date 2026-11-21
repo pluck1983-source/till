@@ -138,7 +138,6 @@ export default function TillView({ till }: { till: Till }) {
 
         {owed > 0 && (
           <div className="mt-2 flex gap-1.5 overflow-x-auto md:gap-2">
-            <QuickCash label="Exact" amount={owed} onClick={() => pay('cash', owed)} />
             {cashSuggestions(owed).map((a) => (
               <QuickCash key={a} label={formatPence(a).replace('.00', '')} amount={a} onClick={() => pay('cash', a)} />
             ))}
