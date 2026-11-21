@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   applyCard,
   applyCash,
-  addMissingCardFees,
+  applyCardFeeRate,
   cardFee,
-  cardPaymentsWithoutFee,
+  cardPaymentsNotAtRate,
   cashSuggestions,
   closeDay,
   dayToCsv,
@@ -110,22 +110,29 @@ describe('card fees', () => {
   });
 });
 
-describe('adding fees to earlier card sales', () => {
-  it('fills in only card payments with no fee, and marks those sales changed', () => {
-    const rate = { percent: 1.69, fixed: 0 };
-    const sales = [
-      { id: 'a', lines: [line(2000)], payments: [applyCard(2000)], completedAt: '2026-11-21T10:00:00Z' },
-      { id: 'b', lines: [line(500)], payments: [applyCash(500, 500).payment], completedAt: '2026-11-21T10:05:00Z' },
-      { id: 'c', lines: [line(3000)], payments: [applyCard(3000, undefined, { percent: 2, fixed: 0 })], completedAt: '2026-11-21T10:10:00Z' },
-    ];
-    expect(cardPaymentsWithoutFee(sales)).toBe(1);
-    const out = addMissingCardFees(sales, rate, '2026-11-21T12:00:00Z');
-    expect(out[0].payments[0].fee).toBe(34);
+describe('updating card fees to the current rate', () => {
+  const sales = [
+    { id: 'a', lines: [line(2000)], payments: [applyCard(2000)], completedAt: '2026-11-21T10:00:00Z' },
+    { id: 'b', lines: [line(500)], payments: [applyCash(500, 500).payment], completedAt: '2026-11-21T10:05:00Z' },
+    { id: 'c', lines: [line(3000)], payments: [applyCard(3000, undefined, { percent: 2, fixed: 0 })], completedAt: '2026-11-21T10:10:00Z' },
+    { id: 'd', lines: [line(1000)], payments: [applyCard(1000, undefined, { percent: 1.69, fixed: 0 })], completedAt: '2026-11-21T10:15:00Z' },
+  ];
+  const rate = { percent: 1.69, fixed: 0 };
+
+  it('fixes missing fees and fees at another rate, leaving the rest alone', () => {
+    expect(cardPaymentsNotAtRate(sales, rate)).toBe(2);
+    const out = applyCardFeeRate(sales, rate, '2026-11-21T12:00:00Z');
+    expect(out[0].payments[0].fee).toBe(34); // none before
+    expect(out[2].payments[0].fee).toBe(51); // was 60 at 2%
     expect(out[0].updatedAt).toBe('2026-11-21T12:00:00Z');
-    expect(out[1]).toBe(sales[1]);
-    expect(out[2].payments[0].fee).toBe(60); // already had a fee - left alone
-    expect(out[2]).toBe(sales[2]);
-    expect(cardPaymentsWithoutFee(out)).toBe(0);
+    expect(out[1]).toBe(sales[1]); // cash
+    expect(out[3]).toBe(sales[3]); // already right
+    expect(cardPaymentsNotAtRate(out, rate)).toBe(0);
+  });
+
+  it('clears fees when the rate is set to nothing', () => {
+    const out = applyCardFeeRate(sales, { percent: 0, fixed: 0 }, 'now');
+    expect(out.every((s) => s.payments.every((p) => p.fee === undefined))).toBe(true);
   });
 });
 

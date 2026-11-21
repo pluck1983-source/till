@@ -34,25 +34,29 @@ export interface CardFeeRate {
   fixed: number;
 }
 
-/** Card payments in these sales that have no fee recorded (taken before a rate was set). */
-export function cardPaymentsWithoutFee(sales: Sale[]): number {
+/** Card payments whose recorded fee isn't what `rate` gives (none recorded, or taken at another rate). */
+export function cardPaymentsNotAtRate(sales: Sale[], rate: CardFeeRate): number {
   let n = 0;
-  for (const sale of sales) for (const p of sale.payments) if (p.method === 'card' && p.fee === undefined) n++;
+  for (const sale of sales)
+    for (const p of sale.payments) if (p.method === 'card' && (p.fee ?? 0) !== cardFee(p.amount, rate)) n++;
   return n;
 }
 
 /**
- * Adds the fee at `rate` to every card payment that has none. Sales that
- * change get a new updatedAt so the change reaches the other devices.
+ * Re-works every card payment's fee at `rate`. Sales that change get a new
+ * updatedAt so the change reaches the other devices; the rest are untouched.
  */
-export function addMissingCardFees(sales: Sale[], rate: CardFeeRate, now: string): Sale[] {
+export function applyCardFeeRate(sales: Sale[], rate: CardFeeRate, now: string): Sale[] {
   return sales.map((sale) => {
-    if (!sale.payments.some((p) => p.method === 'card' && p.fee === undefined)) return sale;
+    if (!sale.payments.some((p) => p.method === 'card' && (p.fee ?? 0) !== cardFee(p.amount, rate))) return sale;
     return {
       ...sale,
-      payments: sale.payments.map((p) =>
-        p.method === 'card' && p.fee === undefined ? { ...p, fee: cardFee(p.amount, rate) } : p,
-      ),
+      payments: sale.payments.map((p) => {
+        if (p.method !== 'card') return p;
+        const fee = cardFee(p.amount, rate);
+        const { fee: _old, ...rest } = p;
+        return fee > 0 ? { ...rest, fee } : rest;
+      }),
       updatedAt: now,
     };
   });

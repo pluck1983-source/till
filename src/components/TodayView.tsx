@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Till } from '../lib/useTill';
-import { cardFee, cardPaymentsWithoutFee, dayTotals, formatPence, totalsByCashier, type ClosedDay } from '../lib/model';
+import { applyCardFeeRate, cardPaymentsNotAtRate, dayTotals, formatPence, totalsByCashier, type ClosedDay } from '../lib/model';
 import { Card, MoneyInput, SaleList, TotalTile } from './shared';
 import { DaySummary } from './HistoryView';
 
@@ -48,7 +48,7 @@ export default function TodayView({ till }: { till: Till }) {
           <TotalTile label="Cash in till" value={formatPence(totals.expectedDrawer)} />
         </div>
 
-        <MissingFees till={till} />
+        <CardFeeUpdate till={till} />
 
         <Card className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <label className="flex items-center gap-2">
@@ -183,34 +183,30 @@ function ByCashier({ till }: { till: Till }) {
   );
 }
 
-/** Offers to add the card fee to today's card sales taken before a fee rate was set. */
-function MissingFees({ till }: { till: Till }) {
-  const rate = till.state.cardFeeRate;
-  const missing = cardPaymentsWithoutFee(till.state.day.sales);
-  if (!rate || missing === 0) return null;
-  const amount = till.state.day.sales.reduce(
-    (sum, sale) =>
-      sum +
-      (sale.voidedAt
-        ? 0
-        : sale.payments.reduce((s, p) => s + (p.method === 'card' && p.fee === undefined ? cardFee(p.amount, rate) : 0), 0)),
-    0,
-  );
-  const rateText = `${rate.percent}%${rate.fixed ? ` + ${formatPence(rate.fixed)}` : ''}`;
+/** Offers to bring today's card fees into line with the current rate. */
+function CardFeeUpdate({ till }: { till: Till }) {
+  const rate = till.state.cardFeeRate ?? { percent: 0, fixed: 0 };
+  const sales = till.state.day.sales;
+  const mismatched = cardPaymentsNotAtRate(sales, rate);
+  if (mismatched === 0) return null;
+  const now = dayTotals(till.state.day).cardFees;
+  const after = dayTotals({ ...till.state.day, sales: applyCardFeeRate(sales, rate, '') }).cardFees;
+  const rateText = till.state.cardFeeRate
+    ? `${rate.percent}%${rate.fixed ? ` + ${formatPence(rate.fixed)}` : ''}`
+    : 'no fee';
   return (
     <Card className="flex flex-wrap items-center gap-3 border-brand-300 text-sm">
       <span className="flex-1">
-        {missing} card payment{missing === 1 ? '' : 's'} today {missing === 1 ? 'was' : 'were'} taken before the card fee was
-        set, so {missing === 1 ? 'it has' : 'they have'} no fee recorded.
+        {mismatched} card payment{mismatched === 1 ? '' : 's'} today {mismatched === 1 ? 'has' : 'have'} a fee that doesn't
+        match the current card fee ({rateText}) - taken before it was set, or at an earlier rate.
       </span>
       <button
         onClick={() => {
-          if (confirm(`Add card fees at ${rateText} to ${missing} earlier card payment${missing === 1 ? '' : 's'} today?`))
-            till.addFeesToToday();
+          if (confirm(`Recalculate the card fees on all of today's card payments at ${rateText}?`)) till.updateTodaysCardFees();
         }}
         className="tabular rounded-lg bg-brand-600 px-3 py-2 font-semibold text-white"
       >
-        Add fees at {rateText}{amount > 0 ? ` (−${formatPence(amount)})` : ''}
+        Update today's card fees ({formatPence(now)} → {formatPence(after)})
       </button>
     </Card>
   );
