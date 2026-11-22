@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { MoneyInput } from './shared';
+import DenominationCounter from './DenominationCounter';
 import type { Till } from '../lib/useTill';
-import { cashSuggestions, formatPence, keypadPress, linesTotal, paidTotal, parsePence } from '../lib/model';
+import { cashSuggestions, countsTotal, formatPence, keypadPress, linesTotal, paidTotal, parsePence } from '../lib/model';
 
 const KEYS = ['7', '8', '9', 'back', '4', '5', '6', 'clear', '1', '2', '3', '00', '0', '.'];
 
@@ -215,35 +215,42 @@ function ChangeDue({ change, total, onDone }: { change: number; total: number; o
 
 /** Asks for the day's float before the first sale, so the till knows the cash it started with. */
 function FloatPrompt({ till }: { till: Till }) {
-  const [float, setFloat] = useState<number | undefined>(undefined);
-  const last = till.state.history[0]?.float ?? 0;
+  const [counting, setCounting] = useState(false);
+  const last = till.state.history[0];
   return (
     <div className="my-4 rounded-2xl border border-brand-200 bg-white p-4 shadow-sm short:my-2 short:p-3 dark:border-brand-900 dark:bg-slate-900">
       <p className="font-bold">Cash float in the till today?</p>
       <p className="mb-3 text-sm text-slate-500">
-        Added to your cash takings so End of day shows the total cash that should be in the till.
+        Count it by note and coin. It's added to your cash takings so End of day shows the cash that should be in the till.
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <MoneyInput value={float} onChange={setFloat} className="w-32" ariaLabel="Float" />
-        <button
-          onClick={() => float !== undefined && till.setFloat(float)}
-          disabled={float === undefined}
-          className="h-11 rounded-xl bg-brand-600 px-4 font-semibold text-white disabled:opacity-40"
-        >
-          Set float
+        <button onClick={() => setCounting(true)} className="h-11 rounded-xl bg-brand-600 px-4 font-semibold text-white">
+          Count float…
         </button>
-        {last > 0 && (
+        {last && last.float > 0 && (
           <button
-            onClick={() => till.setFloat(last)}
+            onClick={() => till.setFloat(last.float, last.floatCounts)}
             className="tabular h-11 rounded-xl border-2 border-brand-600 px-4 font-semibold text-brand-700 dark:text-brand-300"
           >
-            Same as last time ({formatPence(last)})
+            Same as last time ({formatPence(last.float)})
           </button>
         )}
         <button onClick={() => till.setFloat(0)} className="h-11 px-2 text-sm text-slate-500 underline">
           No float
         </button>
       </div>
+      {counting && (
+        <DenominationCounter
+          title="Count the float"
+          hint="How many of each note and coin are in the till before you start trading."
+          initial={last?.floatCounts}
+          onCancel={() => setCounting(false)}
+          onSave={(counts) => {
+            till.setFloat(countsTotal(counts), counts);
+            setCounting(false);
+          }}
+        />
+      )}
     </div>
   );
 }

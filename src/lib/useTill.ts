@@ -9,6 +9,8 @@ import {
   remaining,
   tradingDate,
   type CardFeeRate,
+  type Counts,
+  countsTotal,
   type ClosedDay,
   type Payment,
   type QuickItem,
@@ -152,11 +154,12 @@ export function useTill() {
     });
   }, []);
 
-  /** Changes the open day in the shared data. */
+  /** Changes one day in the shared data - the open day unless another day's ID is given. */
   const updateDay = useCallback(
-    (fn: (d: DayRecord) => DayRecord) =>
+    (fn: (d: DayRecord) => DayRecord, dayId?: string) =>
       update((s) => {
-        const day = openDay(s.shared);
+        const day = dayId ? s.shared.days[dayId] : openDay(s.shared);
+        if (!day) return s;
         return { ...s, shared: { ...s.shared, days: { ...s.shared.days, [day.id]: fn(day) } } };
       }),
     [update],
@@ -247,7 +250,7 @@ export function useTill() {
 
   /** Voids (or restores) a sale on the open day. */
   const toggleVoid = useCallback(
-    (saleId: string) => {
+    (saleId: string, dayId?: string) => {
       const now = new Date().toISOString();
       updateDay((day) => ({
         ...day,
@@ -258,14 +261,38 @@ export function useTill() {
               ? { ...sale, voidedAt: undefined, updatedAt: now }
               : { ...sale, voidedAt: now, updatedAt: now },
         ),
-      }));
+      }), dayId);
     },
     [updateDay],
   );
 
+  /** Sets a day's float, optionally with the note/coin count it came from. */
   const setFloat = useCallback(
-    (float: number) =>
-      updateDay((day) => ({ ...day, float, floatSet: true, floatUpdatedAt: new Date().toISOString() })),
+    (float: number, counts?: Counts, dayId?: string) =>
+      updateDay((day) => {
+        const { floatCounts: _old, ...rest } = day;
+        return {
+          ...rest,
+          float,
+          floatSet: true,
+          floatUpdatedAt: new Date().toISOString(),
+          ...(counts && countsTotal(counts) > 0 ? { floatCounts: counts } : {}),
+        };
+      }, dayId),
+    [updateDay],
+  );
+
+  /** Records (or with null, clears) a day's cash-up count. */
+  const setCashUp = useCallback(
+    (counts: Counts | null, dayId?: string) =>
+      updateDay((day) => {
+        const { countedCash: _c, countedCounts: _cc, ...rest } = day;
+        return {
+          ...rest,
+          countedUpdatedAt: new Date().toISOString(),
+          ...(counts ? { countedCash: countsTotal(counts), countedCounts: counts } : {}),
+        };
+      }, dayId),
     [updateDay],
   );
 
@@ -274,12 +301,32 @@ export function useTill() {
     [update],
   );
 
-  /** Re-works every card fee on today's sales at the current rate (none set = no fees). */
-  const updateTodaysCardFees = useCallback(() => {
-    const rate = storeRef.current.shared.cardFeeRate ?? { percent: 0, fixed: 0 };
-    const now = new Date().toISOString();
-    updateDay((day) => ({ ...day, sales: applyCardFeeRate(day.sales, rate, now) }));
-  }, [updateDay]);
+  /** Re-works every card fee on a day's sales at the current rate (none set = no fees). */
+  const updateCardFees = useCallback(
+    (dayId?: string) => {
+      const rate = storeRef.current.shared.cardFeeRate ?? { percent: 0, fixed: 0 };
+      const now = new Date().toISOString();
+      updateDay((day) => ({ ...day, sales: applyCardFeeRate(day.sales, rate, now) }), dayId);
+    },
+    [updateDay],
+  );
+
+  /** Saves a corrected copy of a closed day to Google Drive as a new Sheet. */
+  const resaveDay = useCallback(
+    (dayId: string) => {
+      const day = closedDays(storeRef.current.shared).find((d) => d.id === dayId);
+      if (!day || !storeRef.current.driveLinked) return;
+      const stamp = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      update((s) => ({
+        ...s,
+        outbox: [
+          ...s.outbox,
+          { id: `${dayId}-${Date.now()}`, name: `Till ${localDate(tradingDate(day))} (edited ${stamp})`, csv: dayToCsv(day) },
+        ],
+      }));
+    },
+    [update],
+  );
 
   const setCardFeeRate = useCallback(
     (rate: CardFeeRate | null) =>
@@ -300,16 +347,11 @@ export function useTill() {
 
   /** Closes the day for every device, queues its Sheet, and opens the next day. */
   const endDay = useCallback(
-    (countedCash?: number): ClosedDay => {
+    (): ClosedDay => {
       const s = storeRef.current;
       const day = openDay(s.shared);
       const closedAt = new Date().toISOString();
-      const closedRecord: DayRecord = {
-        ...day,
-        closedAt,
-        closedBy: s.deviceName,
-        ...(countedCash !== undefined ? { countedCash } : {}),
-      };
+      const closedRecord: DayRecord = { ...day, closedAt, closedBy: s.deviceName };
       const shared = normalize({ ...s.shared, days: { ...s.shared.days, [day.id]: closedRecord } });
       const closed = closedDays(shared).find((d) => d.id === day.id)!;
       setLastChange(null);
@@ -512,7 +554,9 @@ export function useTill() {
     setDeviceName,
     setQuickItems,
     setCardFeeRate,
-    updateTodaysCardFees,
+    updateCardFees,
+    setCashUp,
+    resaveDay,
     endDay,
     connectDrive,
     reconnectDrive: () => drive.signIn(false),

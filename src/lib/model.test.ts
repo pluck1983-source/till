@@ -3,6 +3,8 @@ import {
   applyCard,
   applyCash,
   applyCardFeeRate,
+  countsTotal,
+  describeCounts,
   cardFee,
   cardPaymentsNotAtRate,
   cashSuggestions,
@@ -133,6 +135,31 @@ describe('updating card fees to the current rate', () => {
   it('clears fees when the rate is set to nothing', () => {
     const out = applyCardFeeRate(sales, { percent: 0, fixed: 0 }, 'now');
     expect(out.every((s) => s.payments.every((p) => p.fee === undefined))).toBe(true);
+  });
+});
+
+describe('counting notes and coins', () => {
+  it('totals a count and describes it', () => {
+    const counts = { 2000: 2, 1000: 1, 100: 5, 20: 3 };
+    expect(countsTotal(counts)).toBe(5560);
+    expect(describeCounts(counts)).toBe('2 × £20, 1 × £10, 5 × £1, 3 × 20p');
+    expect(countsTotal(undefined)).toBe(0);
+  });
+
+  it('puts the float and cash-up breakdowns in the CSV', () => {
+    const d: Day = {
+      id: 'x',
+      openedAt: '2026-11-21T09:00:00Z',
+      float: 5000,
+      floatCounts: { 2000: 2, 500: 2 },
+      countedCash: 6000,
+      countedCounts: { 2000: 3 },
+      sales: [{ id: 'a', lines: [line(1000)], payments: [applyCash(1000, 1000).payment], completedAt: '2026-11-21T10:00:00Z' }],
+    };
+    const csv = dayToCsv(closeDay(d, d.countedCash));
+    expect(csv).toContain('Float by note/coin,Count,Value\n£20,2,40.00\n£5,2,10.00');
+    expect(csv).toContain('Cash-up by note/coin,Count,Value\n£20,3,60.00');
+    expect(csv).toContain('Over / short,0.00');
   });
 });
 

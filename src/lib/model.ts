@@ -83,11 +83,49 @@ export interface Sale {
   cashier?: string;
 }
 
+/** UK notes and coins, largest first, in pence. */
+export const DENOMINATIONS: { value: number; label: string; kind: 'note' | 'coin' }[] = [
+  { value: 5000, label: '£50', kind: 'note' },
+  { value: 2000, label: '£20', kind: 'note' },
+  { value: 1000, label: '£10', kind: 'note' },
+  { value: 500, label: '£5', kind: 'note' },
+  { value: 200, label: '£2', kind: 'coin' },
+  { value: 100, label: '£1', kind: 'coin' },
+  { value: 50, label: '50p', kind: 'coin' },
+  { value: 20, label: '20p', kind: 'coin' },
+  { value: 10, label: '10p', kind: 'coin' },
+  { value: 5, label: '5p', kind: 'coin' },
+  { value: 2, label: '2p', kind: 'coin' },
+  { value: 1, label: '1p', kind: 'coin' },
+];
+
+/** How many of each note/coin, keyed by its value in pence (e.g. { "2000": 3 } = three £20s). */
+export type Counts = Record<string, number>;
+
+export function countsTotal(counts: Counts | undefined): number {
+  if (!counts) return 0;
+  return Object.entries(counts).reduce((sum, [value, n]) => sum + Number(value) * (n || 0), 0);
+}
+
+/** Short description of a count, e.g. "2 × £20, 1 × £10, 4 × £1". */
+export function describeCounts(counts: Counts | undefined): string {
+  if (!counts) return '';
+  return DENOMINATIONS.filter((d) => counts[d.value] > 0)
+    .map((d) => `${counts[d.value]} × ${d.label}`)
+    .join(', ');
+}
+
 export interface Day {
   id: string;
   openedAt: string;
   /** Cash in the drawer at the start of the day, in pence */
   float: number;
+  /** The float counted by note/coin, when it was entered that way */
+  floatCounts?: Counts;
+  /** Cash counted in the drawer at cash-up, in pence */
+  countedCash?: number;
+  /** The cash-up counted by note/coin */
+  countedCounts?: Counts;
   /** True once the float has been set (or skipped) for this day, so the till stops asking */
   floatSet?: boolean;
   sales: Sale[];
@@ -108,9 +146,7 @@ export interface DayTotals {
 export interface ClosedDay extends Day {
   closedAt: string;
   totals: DayTotals;
-  /** Cash counted at close, if entered */
-  countedCash?: number;
-  /** Name of the till (device) that took these sales */
+  /** Name of the till (device) that closed the day */
   till?: string;
 }
 
@@ -223,6 +259,11 @@ export function closeDay(day: Day, countedCash?: number, till?: string): ClosedD
   };
 }
 
+/** Counted cash minus what should be in the drawer: positive is over, negative is short. */
+export function overShort(day: Pick<Day, 'countedCash'>, totals: DayTotals): number | null {
+  return day.countedCash === undefined ? null : day.countedCash - totals.expectedDrawer;
+}
+
 export interface CashierTotals {
   cashier: string;
   count: number;
@@ -308,6 +349,14 @@ export function dayToCsv(day: ClosedDay): string {
     rows.push(['Counted in drawer', pounds(day.countedCash)]);
     rows.push(['Over / short', pounds(day.countedCash - t.expectedDrawer)]);
   }
+  const breakdown = (title: string, counts: Counts | undefined) => {
+    if (!counts || countsTotal(counts) === 0) return;
+    rows.push([]);
+    rows.push([title, 'Count', 'Value']);
+    for (const d of DENOMINATIONS) if (counts[d.value] > 0) rows.push([d.label, counts[d.value], pounds(d.value * counts[d.value])]);
+  };
+  breakdown('Float by note/coin', day.floatCounts);
+  breakdown('Cash-up by note/coin', day.countedCounts);
   return rows.map((r) => r.map(csvCell).join(',')).join('\n') + '\n';
 }
 

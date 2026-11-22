@@ -14,7 +14,12 @@ https://pluck1983-source.github.io/till/ - open it in Safari and use
 - Today's total, cash and card are always in the header. **Today** lists every
   transaction (with void/restore) and has **End of day**: opening float,
   optional cash count (over/short), then **Save day & reset**.
-- **History** keeps every closed day, with a CSV download.
+- **Float and cash up by note and coin**: count the opening float and the
+  end-of-day cash in £50 … 1p; the till shows what should be in the drawer
+  (float + cash sales) and whether the count is over or short.
+- **History** keeps every closed day, with a CSV download. A closed day can
+  be corrected afterwards - float, cash-up, voids and card fees - and a
+  corrected copy saved to Google Drive.
 - **Settings** sets up quick items and Google Drive.
 
 ## Storage

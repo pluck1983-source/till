@@ -21,8 +21,9 @@ import { dayTotals, newId, type CardFeeRate, type ClosedDay, type Day, type Quic
 export interface DayRecord extends Day {
   /** When the float was last changed - the newest float wins */
   floatUpdatedAt?: string;
+  /** When the cash-up was last changed - the newest count wins */
+  countedUpdatedAt?: string;
   closedAt?: string;
-  countedCash?: number;
   /** Cashier (device name) who closed the day */
   closedBy?: string;
 }
@@ -77,11 +78,19 @@ function mergeDay(a: DayRecord, b: DayRecord): DayRecord {
     floatUpdatedAt: floatFrom.floatUpdatedAt,
     sales: mergeSales(a.sales, b.sales),
   };
+  if (floatFrom.floatCounts) merged.floatCounts = floatFrom.floatCounts;
   if (closer.closedAt) {
     merged.closedAt = closer.closedAt;
-    if (closer.countedCash !== undefined) merged.countedCash = closer.countedCash;
     if (closer.closedBy) merged.closedBy = closer.closedBy;
   }
+  // The newest cash-up wins; older data without a timestamp takes the count saved with the close.
+  const countFrom =
+    a.countedUpdatedAt || b.countedUpdatedAt
+      ? (a.countedUpdatedAt ?? '') >= (b.countedUpdatedAt ?? '') ? a : b
+      : closer;
+  if (countFrom.countedCash !== undefined) merged.countedCash = countFrom.countedCash;
+  if (countFrom.countedCounts) merged.countedCounts = countFrom.countedCounts;
+  if (countFrom.countedUpdatedAt) merged.countedUpdatedAt = countFrom.countedUpdatedAt;
   return merged;
 }
 
@@ -170,6 +179,8 @@ export function closedDays(data: SharedData): ClosedDay[] {
       float: d.float,
       floatSet: d.floatSet,
       sales: d.sales,
+      ...(d.floatCounts ? { floatCounts: d.floatCounts } : {}),
+      ...(d.countedCounts ? { countedCounts: d.countedCounts } : {}),
       closedAt: d.closedAt!,
       totals: dayTotals(d),
       ...(d.countedCash !== undefined ? { countedCash: d.countedCash } : {}),

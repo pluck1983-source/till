@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Till } from '../lib/useTill';
-import { dayToCsv, formatPence, localDate, tradingDate, type ClosedDay } from '../lib/model';
+import { dayToCsv, describeCounts, formatPence, localDate, overShort, tradingDate, type ClosedDay } from '../lib/model';
+import { CardFeeUpdate, CashPanel } from './CashPanel';
 import { Card, SaleList, TotalTile } from './shared';
 
 export default function HistoryView({ till }: { till: Till }) {
@@ -18,7 +19,7 @@ export default function HistoryView({ till }: { till: Till }) {
               <button onClick={() => setOpen(null)} className="text-sm text-brand-600 underline">
                 ← Back to list
               </button>
-              <DaySummary day={day} />
+              <DaySummary day={day} till={till} />
             </div>
           ) : (
             <button
@@ -45,8 +46,14 @@ function dayLabel(day: ClosedDay) {
   return new Date(tradingDate(day)).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-export function DaySummary({ day }: { day: ClosedDay }) {
+/**
+ * One closed day. With `till`, its float, cash-up, voids and card fees can be
+ * corrected; without it (straight after closing) it's read-only.
+ */
+export function DaySummary({ day, till }: { day: ClosedDay; till?: Till }) {
   const t = day.totals;
+  const [edited, setEdited] = useState(false);
+  const [resaved, setResaved] = useState(false);
   const download = () => {
     const url = URL.createObjectURL(new Blob([dayToCsv(day)], { type: 'text/csv' }));
     const a = document.createElement('a');
@@ -55,6 +62,20 @@ export function DaySummary({ day }: { day: ClosedDay }) {
     a.click();
     URL.revokeObjectURL(url);
   };
+  const diff = overShort(day, t);
+  // Any edit made from here: note it so we can offer a corrected copy for Google Drive.
+  const markEdited = () => {
+    setEdited(true);
+    setResaved(false);
+  };
+  const editingTill: Till | undefined = till && {
+    ...till,
+    setFloat: (...args: Parameters<Till['setFloat']>) => (markEdited(), till.setFloat(...args)),
+    setCashUp: (...args: Parameters<Till['setCashUp']>) => (markEdited(), till.setCashUp(...args)),
+    updateCardFees: (...args: Parameters<Till['updateCardFees']>) => (markEdited(), till.updateCardFees(...args)),
+    toggleVoid: (...args: Parameters<Till['toggleVoid']>) => (markEdited(), till.toggleVoid(...args)),
+  };
+
   return (
     <div className="space-y-3">
       <h2 className="text-lg font-bold">
@@ -67,17 +88,55 @@ export function DaySummary({ day }: { day: ClosedDay }) {
         <TotalTile label="Card" value={formatPence(t.card)} tone="card" note={t.cardFees > 0 ? `fees −${formatPence(t.cardFees)} (est.)` : undefined} />
         <TotalTile label="Sales" value={String(t.count)} />
       </div>
+
+      {editingTill && edited && till!.state.driveLinked && (
+        <Card className="flex flex-wrap items-center gap-3 border-brand-300 text-sm">
+          <span className="flex-1">
+            {resaved
+              ? 'A corrected copy is being saved to the Till records folder in Google Drive. You can delete the old Sheet for this day there.'
+              : "You've changed this day. The Google Sheet saved when it closed still has the old figures."}
+          </span>
+          {!resaved && (
+            <button
+              onClick={() => {
+                till!.resaveDay(day.id);
+                setResaved(true);
+              }}
+              className="rounded-lg bg-brand-600 px-3 py-2 font-semibold text-white"
+            >
+              Save corrected copy to Google Drive
+            </button>
+          )}
+        </Card>
+      )}
+
+      {editingTill ? (
+        <>
+          <CardFeeUpdate till={editingTill} day={day} dayId={day.id} />
+          <CashPanel till={editingTill} day={day} totals={t} dayId={day.id} />
+        </>
+      ) : (
+        <Card className="tabular grid grid-cols-1 gap-1 text-sm md:grid-cols-2">
+          <span>
+            Opening float: <strong>{formatPence(day.float)}</strong>
+            {day.floatCounts && <span className="block text-xs text-slate-500">{describeCounts(day.floatCounts)}</span>}
+          </span>
+          <span>Should be in till (float + cash): <strong>{formatPence(t.expectedDrawer)}</strong></span>
+          {day.countedCash !== undefined && (
+            <>
+              <span>
+                Counted: <strong>{formatPence(day.countedCash)}</strong>
+                {day.countedCounts && <span className="block text-xs text-slate-500">{describeCounts(day.countedCounts)}</span>}
+              </span>
+              <span>
+                Over / short: <strong>{formatPence(diff!)}</strong>
+              </span>
+            </>
+          )}
+        </Card>
+      )}
+
       <Card className="tabular grid grid-cols-1 gap-1 text-sm md:grid-cols-2">
-        <span>Opening float: <strong>{formatPence(day.float)}</strong></span>
-        <span>Cash in till (float + cash): <strong>{formatPence(t.expectedDrawer)}</strong></span>
-        {day.countedCash !== undefined && (
-          <>
-            <span>Counted: <strong>{formatPence(day.countedCash)}</strong></span>
-            <span>
-              Over / short: <strong>{formatPence(day.countedCash - t.expectedDrawer)}</strong>
-            </span>
-          </>
-        )}
         {t.cardFees > 0 && (
           <span>
             Card fees (est.): <strong>−{formatPence(t.cardFees)}</strong> · after fees{' '}
@@ -96,7 +155,7 @@ export function DaySummary({ day }: { day: ClosedDay }) {
             Download CSV
           </button>
         </div>
-        <SaleList sales={day.sales} />
+        <SaleList sales={day.sales} onToggleVoid={editingTill ? (id) => editingTill.toggleVoid(id, day.id) : undefined} />
       </Card>
     </div>
   );

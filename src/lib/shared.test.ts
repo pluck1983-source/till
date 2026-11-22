@@ -80,6 +80,32 @@ describe('merging two cashiers', () => {
     expect(mergeShared(b, a).cardFeeRate).toEqual({ percent: 1.75, fixed: 10 });
   });
 
+  it('keeps the newest cash-up, even after the day closed', () => {
+    const closed = base([], { closedAt: '2026-11-21T17:00:00Z', countedCash: 5000, closedBy: 'iPad' });
+    const recount = base([], {
+      closedAt: '2026-11-21T17:00:00Z',
+      countedCash: 5250,
+      countedCounts: { 2000: 2, 1000: 1, 50: 5 },
+      countedUpdatedAt: '2026-11-22T09:00:00Z',
+    });
+    const m = mergeShared(closed, recount);
+    expect(m.days.d1.countedCash).toBe(5250);
+    expect(m.days.d1.countedCounts).toEqual({ 2000: 2, 1000: 1, 50: 5 });
+    expect(mergeShared(recount, closed).days.d1.countedCash).toBe(5250);
+  });
+
+  it('a cleared cash-up stays cleared', () => {
+    const counted = base([], { countedCash: 5000, countedUpdatedAt: '2026-11-21T17:00:00Z' });
+    const cleared = base([], { countedUpdatedAt: '2026-11-21T18:00:00Z' });
+    expect(mergeShared(counted, cleared).days.d1.countedCash).toBeUndefined();
+  });
+
+  it('carries the float breakdown with the newest float', () => {
+    const a = base([], { float: 5000, floatCounts: { 2000: 2, 1000: 1 }, floatSet: true, floatUpdatedAt: '2026-11-21T08:00:00Z' });
+    const b = base([], { float: 3000, floatCounts: { 1000: 3 }, floatSet: true, floatUpdatedAt: '2026-11-21T08:05:00Z' });
+    expect(mergeShared(a, b).days.d1.floatCounts).toEqual({ 1000: 3 });
+  });
+
   it('converts the old on-device format', () => {
     const data = fromLegacy({
       day: { id: 'now', openedAt: '2026-11-21T08:00:00Z', float: 0, sales: [] },
