@@ -160,7 +160,7 @@ export default function DenominationCounter({
                     >
                       +
                     </button>
-                    <span className="flex-1 text-right text-slate-600 dark:text-slate-400">{n ? formatPence(d.unit * n) : ''}</span>
+                    <AmountCell unit={d.unit} label={d.label} n={n} onCount={(count) => set(d.key, count)} />
                   </div>
                 );
               })}
@@ -194,5 +194,48 @@ export default function DenominationCounter({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The row's value, which can also be typed: an amount that's an exact
+ * multiple of the note/coin/bag sets the count. Anything else is flagged
+ * and leaves the count as it was.
+ */
+function AmountCell({ unit, label, n, onCount }: { unit: number; label: string; n: number; onCount: (count: number) => void }) {
+  const [text, setText] = useState<string | null>(null); // null while not being typed in
+  const shown = text ?? (n ? (unit * n / 100).toFixed(2) : '');
+  const pence = text === null || text === '' ? null : Math.round(Number(text) * 100);
+  const bad = pence !== null && (Number.isNaN(pence) || pence % unit !== 0);
+
+  return (
+    <span className="flex flex-1 flex-col items-end">
+      <span
+        className={`inline-flex h-10 w-24 items-center rounded-lg border bg-white px-2 split:h-9 dark:bg-slate-900 ${
+          bad ? 'border-amber-500 ring-2 ring-amber-300' : 'border-slate-300 dark:border-slate-700'
+        }`}
+      >
+        <span className="text-slate-500">£</span>
+        <input
+          inputMode="decimal"
+          value={shown}
+          placeholder="0.00"
+          aria-label={`Amount in ${label}`}
+          onFocus={(e) => {
+            setText(shown);
+            e.target.select();
+          }}
+          onChange={(e) => {
+            const t = e.target.value.replace(/[^\d.]/g, '');
+            setText(t);
+            const p = t === '' ? 0 : Math.round(Number(t) * 100);
+            if (!Number.isNaN(p) && p % unit === 0) onCount(p / unit);
+          }}
+          onBlur={() => setText(null)}
+          className="w-full min-w-0 bg-transparent pl-1 text-right outline-none"
+        />
+      </span>
+      {bad && <span className="text-[11px] text-amber-700">{label.endsWith('bag') ? `not whole ${label}s` : `not a multiple of ${label}`}</span>}
+    </span>
   );
 }
