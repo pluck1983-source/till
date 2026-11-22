@@ -3,6 +3,7 @@ import type { Till } from '../lib/useTill';
 import {
   applyCardFeeRate,
   cardPaymentsNotAtRate,
+  closingCash,
   countsTotal,
   dayTotals,
   describeCounts,
@@ -22,6 +23,11 @@ import { Card } from './shared';
 export function CashPanel({ till, day, totals, dayId }: { till: Till; day: Day; totals: DayTotals; dayId?: string }) {
   const [counting, setCounting] = useState<'float' | 'cashup' | null>(null);
   const diff = overShort(day, totals);
+  // The day before this one (history is newest first), for carrying its cash over as this float.
+  const history = till.state.history;
+  const previous = dayId ? history[history.findIndex((d) => d.id === dayId) + 1] : history[0];
+  const carry = previous ? closingCash(previous) : null;
+  const carryIsCurrent = carry !== null && carry.amount === day.float;
 
   return (
     <Card className="tabular space-y-3">
@@ -35,6 +41,23 @@ export function CashPanel({ till, day, totals, dayId }: { till: Till; day: Day; 
           {day.float || day.floatCounts ? 'Edit float…' : 'Count float…'}
         </button>
       </div>
+      {carry && carry.amount > 0 && !carryIsCurrent && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-brand-50 p-2 text-sm dark:bg-brand-950">
+          <span className="flex-1">
+            Cash left in the till at the end of the previous day:{' '}
+            <strong>{formatPence(carry.amount)}</strong> ({carry.counted ? 'cash-up count' : 'float + cash sales, not counted'}).
+          </span>
+          <button
+            onClick={() => {
+              if (confirm(`Set this day's float to ${formatPence(carry.amount)}, the cash left in the till the day before?`))
+                till.setFloat(carry.amount, carry.counts, dayId);
+            }}
+            className="rounded-lg bg-brand-600 px-3 py-1.5 font-semibold text-white"
+          >
+            Use as float
+          </button>
+        </div>
+      )}
 
       <div className="rounded-xl bg-emerald-50 p-3 text-sm dark:bg-emerald-950">
         <div className="flex justify-between"><span>Float</span><span>{formatPence(day.float)}</span></div>

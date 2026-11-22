@@ -3,6 +3,7 @@ import {
   applyCard,
   applyCash,
   applyCardFeeRate,
+  closingCash,
   countsTotal,
   describeCounts,
   cardFee,
@@ -160,6 +161,22 @@ describe('counting notes and coins', () => {
     expect(csv).toContain('Float by note/coin,Count,Value\n£20,2,40.00\n£5,2,10.00');
     expect(csv).toContain('Cash-up by note/coin,Count,Value\n£20,3,60.00');
     expect(csv).toContain('Over / short,0.00');
+  });
+});
+
+describe('carrying cash over to the next day', () => {
+  const day: Day = {
+    id: 'x',
+    openedAt: '2026-11-21T09:00:00Z',
+    float: 5000,
+    sales: [{ id: 'a', lines: [line(1250)], payments: [applyCash(1250, 2000).payment], completedAt: '2026-11-21T10:00:00Z' }],
+  };
+  it('uses the cash-up count when there is one', () => {
+    const c = closingCash(closeDay({ ...day, countedCash: 6200, countedCounts: { 2000: 3, 100: 2 } }, 6200));
+    expect(c).toEqual({ amount: 6200, counts: { 2000: 3, 100: 2 }, counted: true });
+  });
+  it('otherwise uses float + cash sales', () => {
+    expect(closingCash(closeDay(day))).toEqual({ amount: 6250, counted: false });
   });
 });
 

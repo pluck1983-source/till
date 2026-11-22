@@ -259,6 +259,16 @@ export function closeDay(day: Day, countedCash?: number, till?: string): ClosedD
   };
 }
 
+/**
+ * The cash a closed day left in the till, for carrying over as the next
+ * day's float: its cash-up count if it was counted, otherwise what should
+ * have been there (float + cash sales).
+ */
+export function closingCash(day: ClosedDay): { amount: number; counts?: Counts; counted: boolean } {
+  if (day.countedCash !== undefined) return { amount: day.countedCash, counts: day.countedCounts, counted: true };
+  return { amount: day.totals.expectedDrawer, counted: false };
+}
+
 /** Counted cash minus what should be in the drawer: positive is over, negative is short. */
 export function overShort(day: Pick<Day, 'countedCash'>, totals: DayTotals): number | null {
   return day.countedCash === undefined ? null : day.countedCash - totals.expectedDrawer;
