@@ -3,6 +3,7 @@ import {
   applyCard,
   applyCash,
   applyCardFeeRate,
+  bagKey,
   closingCash,
   countsTotal,
   describeCounts,
@@ -161,6 +162,25 @@ describe('counting notes and coins', () => {
     expect(csv).toContain('Float by note/coin,Count,Value\n£20,2,40.00\n£5,2,10.00');
     expect(csv).toContain('Cash-up by note/coin,Count,Value\n£20,3,60.00');
     expect(csv).toContain('Over / short,0.00');
+  });
+});
+
+describe('coin bags', () => {
+  it('counts a bag at its full value alongside loose coins', () => {
+    const counts = { 1000: 2, [bagKey(100)]: 2, 100: 3, [bagKey(20)]: 1, 20: 4 };
+    expect(countsTotal(counts)).toBe(2000 + 4000 + 300 + 1000 + 80);
+    expect(describeCounts(counts)).toBe('2 × £10, 2 × £1 bag, 1 × 20p bag, 3 × £1, 4 × 20p');
+  });
+
+  it('lists bags in the CSV breakdown', () => {
+    const d: Day = {
+      id: 'x',
+      openedAt: '2026-11-21T09:00:00Z',
+      float: 4500,
+      floatCounts: { [bagKey(100)]: 2, 50: 10 },
+      sales: [],
+    };
+    expect(dayToCsv(closeDay(d))).toContain('Float by note/coin,Count,Value\n£1 bag,2,40.00\n50p,10,5.00');
   });
 });
 

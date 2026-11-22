@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DENOMINATIONS, countsTotal, formatPence, type Counts } from '../lib/model';
+import { COIN_BAGS, DENOMINATIONS, bagKey, countsTotal, formatPence, type Counts } from '../lib/model';
 import { MoneyInput } from './shared';
 
 /**
@@ -36,7 +36,7 @@ export default function DenominationCounter({
   const current = amountEntry?.current ?? 0;
   const total =
     mode === 'count' ? countsTotal(counts) : mode === 'total' ? (typed ?? 0) : Math.max(0, current + sign * (change ?? 0));
-  const set = (value: number, n: number) => setCounts((c) => ({ ...c, [value]: Math.max(0, Math.min(9999, n)) }));
+  const set = (key: string | number, n: number) => setCounts((c) => ({ ...c, [key]: Math.max(0, Math.min(9999, n)) }));
   const diff = expected === undefined ? null : total - expected;
 
   return (
@@ -117,18 +117,25 @@ export default function DenominationCounter({
       <div className={`min-h-0 flex-1 overflow-y-auto px-3 py-2 ${mode === 'count' ? '' : 'hidden'}`}>
         {hint && <p className="mb-2 text-sm text-slate-500">{hint}</p>}
         <div className="mx-auto grid max-w-3xl gap-x-6 split:grid-cols-2">
-          {(['note', 'coin'] as const).map((kind) => (
-            <div key={kind}>
-              <h3 className="mt-1 mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {kind === 'note' ? 'Notes' : 'Coins'}
-              </h3>
-              {DENOMINATIONS.filter((d) => d.kind === kind).map((d) => {
-                const n = counts[d.value] ?? 0;
+          {(
+            [
+              ['Notes', DENOMINATIONS.filter((d) => d.kind === 'note').map((d) => ({ key: String(d.value), label: d.label, unit: d.value, sub: '' }))],
+              ['Coins', DENOMINATIONS.filter((d) => d.kind === 'coin').map((d) => ({ key: String(d.value), label: d.label, unit: d.value, sub: '' }))],
+              ['Coin bags', COIN_BAGS.map((b) => ({ key: bagKey(b.coin), label: b.label, unit: b.value, sub: `${formatPence(b.value).replace('.00', '')} each` }))],
+            ] as const
+          ).map(([heading, rows]) => (
+            <div key={heading}>
+              <h3 className="mt-1 mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{heading}</h3>
+              {rows.map((d) => {
+                const n = counts[d.key] ?? 0;
                 return (
-                  <div key={d.value} className="tabular flex items-center gap-2 border-b border-brand-100 py-1.5 dark:border-brand-950">
-                    <span className="w-12 font-bold">{d.label}</span>
+                  <div key={d.key} className="tabular flex items-center gap-2 border-b border-brand-100 py-1.5 dark:border-brand-950">
+                    <span className="w-20 shrink-0 leading-tight">
+                      <span className="block font-bold">{d.label}</span>
+                      {d.sub && <span className="block text-[11px] text-slate-500">{d.sub}</span>}
+                    </span>
                     <button
-                      onClick={() => set(d.value, n - 1)}
+                      onClick={() => set(d.key, n - 1)}
                       disabled={n === 0}
                       className="h-10 w-10 rounded-lg bg-slate-100 text-xl font-bold disabled:opacity-30 dark:bg-slate-800"
                       aria-label={`One fewer ${d.label}`}
@@ -139,19 +146,19 @@ export default function DenominationCounter({
                       inputMode="numeric"
                       value={n || ''}
                       placeholder="0"
-                      onChange={(e) => set(d.value, Number(e.target.value.replace(/\D/g, '')) || 0)}
+                      onChange={(e) => set(d.key, Number(e.target.value.replace(/\D/g, '')) || 0)}
                       onFocus={(e) => e.target.select()}
                       aria-label={`Number of ${d.label}`}
                       className="h-10 w-16 rounded-lg border border-slate-300 bg-white text-center dark:border-slate-700 dark:bg-slate-900"
                     />
                     <button
-                      onClick={() => set(d.value, n + 1)}
+                      onClick={() => set(d.key, n + 1)}
                       className="h-10 w-10 rounded-lg bg-slate-100 text-xl font-bold dark:bg-slate-800"
                       aria-label={`One more ${d.label}`}
                     >
                       +
                     </button>
-                    <span className="flex-1 text-right text-slate-600 dark:text-slate-400">{n ? formatPence(d.value * n) : ''}</span>
+                    <span className="flex-1 text-right text-slate-600 dark:text-slate-400">{n ? formatPence(d.unit * n) : ''}</span>
                   </div>
                 );
               })}

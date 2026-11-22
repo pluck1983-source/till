@@ -99,19 +99,55 @@ export const DENOMINATIONS: { value: number; label: string; kind: 'note' | 'coin
   { value: 1, label: '1p', kind: 'coin' },
 ];
 
-/** How many of each note/coin, keyed by its value in pence (e.g. { "2000": 3 } = three £20s). */
+/** Standard UK bank coin bags: the coin, how many a bag holds, and what a full bag is worth (pence). */
+export const COIN_BAGS: { coin: number; label: string; coins: number; value: number }[] = [
+  { coin: 200, label: '£2 bag', coins: 10, value: 2000 },
+  { coin: 100, label: '£1 bag', coins: 20, value: 2000 },
+  { coin: 50, label: '50p bag', coins: 20, value: 1000 },
+  { coin: 20, label: '20p bag', coins: 50, value: 1000 },
+  { coin: 10, label: '10p bag', coins: 50, value: 500 },
+  { coin: 5, label: '5p bag', coins: 100, value: 500 },
+  { coin: 2, label: '2p bag', coins: 50, value: 100 },
+  { coin: 1, label: '1p bag', coins: 100, value: 100 },
+];
+
+/** Key a coin bag is counted under, e.g. "bag:100" for £1 bags. */
+export const bagKey = (coin: number) => `bag:${coin}`;
+
+/**
+ * How many of each note/coin, keyed by its value in pence (e.g. { "2000": 3 }
+ * = three £20s), plus full coin bags keyed "bag:<coin>" (e.g. { "bag:100": 2 }
+ * = two £1 bags).
+ */
 export type Counts = Record<string, number>;
+
+function keyValue(key: string): number {
+  if (key.startsWith('bag:')) return COIN_BAGS.find((b) => bagKey(b.coin) === key)?.value ?? 0;
+  return Number(key) || 0;
+}
 
 export function countsTotal(counts: Counts | undefined): number {
   if (!counts) return 0;
-  return Object.entries(counts).reduce((sum, [value, n]) => sum + Number(value) * (n || 0), 0);
+  return Object.entries(counts).reduce((sum, [key, n]) => sum + keyValue(key) * (n || 0), 0);
 }
 
-/** Short description of a count, e.g. "2 × £20, 1 × £10, 4 × £1". */
+/** Every counted line, largest first: notes, coin bags, loose coins. */
+export function countLines(counts: Counts | undefined): { label: string; n: number; value: number }[] {
+  if (!counts) return [];
+  const lines: { label: string; n: number; value: number }[] = [];
+  for (const d of DENOMINATIONS.filter((x) => x.kind === 'note'))
+    if (counts[d.value] > 0) lines.push({ label: d.label, n: counts[d.value], value: d.value * counts[d.value] });
+  for (const b of COIN_BAGS)
+    if (counts[bagKey(b.coin)] > 0) lines.push({ label: b.label, n: counts[bagKey(b.coin)], value: b.value * counts[bagKey(b.coin)] });
+  for (const d of DENOMINATIONS.filter((x) => x.kind === 'coin'))
+    if (counts[d.value] > 0) lines.push({ label: d.label, n: counts[d.value], value: d.value * counts[d.value] });
+  return lines;
+}
+
+/** Short description of a count, e.g. "2 × £20, 1 × £1 bag, 4 × £1". */
 export function describeCounts(counts: Counts | undefined): string {
-  if (!counts) return '';
-  return DENOMINATIONS.filter((d) => counts[d.value] > 0)
-    .map((d) => `${counts[d.value]} × ${d.label}`)
+  return countLines(counts)
+    .map((l) => `${l.n} × ${l.label}`)
     .join(', ');
 }
 
@@ -363,7 +399,7 @@ export function dayToCsv(day: ClosedDay): string {
     if (!counts || countsTotal(counts) === 0) return;
     rows.push([]);
     rows.push([title, 'Count', 'Value']);
-    for (const d of DENOMINATIONS) if (counts[d.value] > 0) rows.push([d.label, counts[d.value], pounds(d.value * counts[d.value])]);
+    for (const l of countLines(counts)) rows.push([l.label, l.n, pounds(l.value)]);
   };
   breakdown('Float by note/coin', day.floatCounts);
   breakdown('Cash-up by note/coin', day.countedCounts);
