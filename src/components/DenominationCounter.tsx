@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DENOMINATIONS, countsTotal, formatPence, type Counts } from '../lib/model';
+import { MoneyInput } from './shared';
 
 /**
  * Full-screen count of notes and coins: tap + / − or type how many of each.
@@ -12,6 +13,7 @@ export default function DenominationCounter({
   expected,
   onSave,
   onCancel,
+  amountEntry,
 }: {
   title: string;
   hint?: string;
@@ -20,9 +22,20 @@ export default function DenominationCounter({
   expected?: number;
   onSave: (counts: Counts) => void;
   onCancel: () => void;
+  /**
+   * Also offers typing the whole amount, or adding/taking off an amount from
+   * `current`. Saving that way calls `onSave` with the amount and no breakdown.
+   */
+  amountEntry?: { current: number; onSaveAmount: (amount: number) => void };
 }) {
   const [counts, setCounts] = useState<Counts>(() => ({ ...initial }));
-  const total = countsTotal(counts);
+  const [mode, setMode] = useState<'count' | 'total' | 'adjust'>('count');
+  const [typed, setTyped] = useState<number | undefined>(amountEntry?.current || undefined);
+  const [change, setChange] = useState<number | undefined>(undefined);
+  const [sign, setSign] = useState<1 | -1>(1);
+  const current = amountEntry?.current ?? 0;
+  const total =
+    mode === 'count' ? countsTotal(counts) : mode === 'total' ? (typed ?? 0) : Math.max(0, current + sign * (change ?? 0));
   const set = (value: number, n: number) => setCounts((c) => ({ ...c, [value]: Math.max(0, Math.min(9999, n)) }));
   const diff = expected === undefined ? null : total - expected;
 
@@ -30,12 +43,78 @@ export default function DenominationCounter({
     <div className="pt-safe pb-safe px-safe fixed inset-0 z-50 flex flex-col bg-[#fdf4f5] dark:bg-[#120a0e]" role="dialog" aria-label={title}>
       <div className="flex shrink-0 items-center gap-3 border-b border-brand-100 bg-white px-3 py-2 dark:border-brand-950 dark:bg-slate-950">
         <h2 className="flex-1 text-lg font-bold">{title}</h2>
-        <button onClick={() => setCounts({})} className="px-2 text-sm text-slate-500 underline">
-          Clear all
-        </button>
+        {mode === 'count' && (
+          <button onClick={() => setCounts({})} className="px-2 text-sm text-slate-500 underline">
+            Clear all
+          </button>
+        )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+      {amountEntry && (
+        <div className="flex shrink-0 gap-1 border-b border-brand-100 bg-white px-3 pb-2 dark:border-brand-950 dark:bg-slate-950">
+          {(
+            [
+              ['count', 'Count notes & coins'],
+              ['total', 'Type the total'],
+              ...(current > 0 ? [['adjust', 'Add or take off'] as const] : []),
+            ] as const
+          ).map(([m, label]) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                mode === m ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {mode === 'total' && (
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+          <div className="mx-auto max-w-md space-y-2">
+            <label className="block text-sm font-semibold">The whole float</label>
+            <MoneyInput value={typed} onChange={setTyped} className="w-48 text-2xl" ariaLabel="Float total" />
+            {initial && countsTotal(initial) > 0 && (
+              <p className="text-sm text-slate-500">Saving a typed total replaces the note-and-coin breakdown.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {mode === 'adjust' && (
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+          <div className="tabular mx-auto max-w-md space-y-3">
+            <p className="text-sm">
+              Float now: <strong>{formatPence(current)}</strong>
+            </p>
+            <div className="flex gap-1">
+              {([1, -1] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSign(s)}
+                  className={`rounded-lg px-4 py-2 font-semibold ${
+                    sign === s ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                  }`}
+                >
+                  {s === 1 ? 'Add' : 'Take off'}
+                </button>
+              ))}
+            </div>
+            <MoneyInput value={change} onChange={setChange} className="w-48 text-2xl" ariaLabel="Amount to change the float by" />
+            <p className="text-sm">
+              New float: <strong>{formatPence(total)}</strong>
+            </p>
+            {initial && countsTotal(initial) > 0 && (
+              <p className="text-sm text-slate-500">Saving replaces the note-and-coin breakdown with the new total.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className={`min-h-0 flex-1 overflow-y-auto px-3 py-2 ${mode === 'count' ? '' : 'hidden'}`}>
         {hint && <p className="mb-2 text-sm text-slate-500">{hint}</p>}
         <div className="mx-auto grid max-w-3xl gap-x-6 split:grid-cols-2">
           {(['note', 'coin'] as const).map((kind) => (
@@ -95,7 +174,11 @@ export default function DenominationCounter({
           <button onClick={onCancel} className="h-12 rounded-xl bg-slate-200 px-5 font-semibold dark:bg-slate-800">
             Cancel
           </button>
-          <button onClick={() => onSave(counts)} className="h-12 rounded-xl bg-brand-600 px-6 font-bold text-white">
+          <button
+            onClick={() => (mode === 'count' || !amountEntry ? onSave(counts) : amountEntry.onSaveAmount(total))}
+            disabled={mode === 'total' && typed === undefined}
+            className="h-12 rounded-xl bg-brand-600 px-6 font-bold text-white disabled:opacity-40"
+          >
             Save
           </button>
         </div>

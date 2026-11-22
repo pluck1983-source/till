@@ -105,6 +105,13 @@ export function CashPanel({ till, day, totals, dayId }: { till: Till; day: Day; 
           title="Opening float"
           hint="How many of each note and coin were in the till at the start of the day."
           initial={day.floatCounts}
+          amountEntry={{
+            current: day.float,
+            onSaveAmount: (amount) => {
+              till.setFloat(amount, undefined, dayId);
+              setCounting(null);
+            },
+          }}
           onCancel={() => setCounting(null)}
           onSave={(counts) => {
             till.setFloat(countsTotal(counts), counts, dayId);

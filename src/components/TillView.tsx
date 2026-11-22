@@ -250,9 +250,16 @@ function FloatPrompt({ till }: { till: Till }) {
       </div>
       {counting && (
         <DenominationCounter
-          title="Count the float"
+          title="Today's float"
           hint="How many of each note and coin are in the till before you start trading."
           initial={last?.floatCounts}
+          amountEntry={{
+            current: 0,
+            onSaveAmount: (amount) => {
+              till.setFloat(amount);
+              setCounting(false);
+            },
+          }}
           onCancel={() => setCounting(false)}
           onSave={(counts) => {
             till.setFloat(countsTotal(counts), counts);
