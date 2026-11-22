@@ -26,7 +26,14 @@ export default function DenominationCounter({
    * Also offers typing the whole amount, or adding/taking off an amount from
    * `current`. Saving that way calls `onSave` with the amount and no breakdown.
    */
-  amountEntry?: { current: number; onSaveAmount: (amount: number) => void };
+  amountEntry?: {
+    current: number;
+    onSaveAmount: (amount: number) => void;
+    /** Label over the typed total, e.g. "The whole float" */
+    totalLabel?: string;
+    /** Offer "Add or take off" (default true) */
+    adjust?: boolean;
+  };
 }) {
   const [counts, setCounts] = useState<Counts>(() => ({ ...initial }));
   const [mode, setMode] = useState<'count' | 'total' | 'adjust'>('count');
@@ -56,7 +63,7 @@ export default function DenominationCounter({
             [
               ['count', 'Count notes & coins'],
               ['total', 'Type the total'],
-              ...(current > 0 ? [['adjust', 'Add or take off'] as const] : []),
+              ...(current > 0 && amountEntry.adjust !== false ? [['adjust', 'Add or take off'] as const] : []),
             ] as const
           ).map(([m, label]) => (
             <button
@@ -75,8 +82,8 @@ export default function DenominationCounter({
       {mode === 'total' && (
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
           <div className="mx-auto max-w-md space-y-2">
-            <label className="block text-sm font-semibold">The whole float</label>
-            <MoneyInput value={typed} onChange={setTyped} className="w-48 text-2xl" ariaLabel="Float total" />
+            <label className="block text-sm font-semibold">{amountEntry?.totalLabel ?? 'The whole float'}</label>
+            <MoneyInput value={typed} onChange={setTyped} className="w-48 text-2xl" ariaLabel={amountEntry?.totalLabel ?? 'Float total'} />
             {initial && countsTotal(initial) > 0 && (
               <p className="text-sm text-slate-500">Saving a typed total replaces the note-and-coin breakdown.</p>
             )}

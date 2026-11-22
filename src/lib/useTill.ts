@@ -284,13 +284,16 @@ export function useTill() {
 
   /** Records (or with null, clears) a day's cash-up count. */
   const setCashUp = useCallback(
-    (counts: Counts | null, dayId?: string) =>
+    (counts: Counts | null, dayId?: string, amount?: number) =>
       updateDay((day) => {
         const { countedCash: _c, countedCounts: _cc, ...rest } = day;
+        const total = amount ?? (counts ? countsTotal(counts) : undefined);
         return {
           ...rest,
           countedUpdatedAt: new Date().toISOString(),
-          ...(counts ? { countedCash: countsTotal(counts), countedCounts: counts } : {}),
+          ...(total !== undefined ? { countedCash: total } : {}),
+          // A typed total has no note-and-coin breakdown.
+          ...(amount === undefined && counts ? { countedCounts: counts } : {}),
         };
       }, dayId),
     [updateDay],

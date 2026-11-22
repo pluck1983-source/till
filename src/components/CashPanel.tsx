@@ -125,6 +125,15 @@ export function CashPanel({ till, day, totals, dayId }: { till: Till; day: Day; 
           hint="Count everything in the till - float included."
           initial={day.countedCounts}
           expected={totals.expectedDrawer}
+          amountEntry={{
+            current: day.countedCash ?? 0,
+            totalLabel: 'Total cash in the till',
+            adjust: false,
+            onSaveAmount: (amount) => {
+              till.setCashUp(null, dayId, amount);
+              setCounting(null);
+            },
+          }}
           onCancel={() => setCounting(null)}
           onSave={(counts) => {
             till.setCashUp(counts, dayId);
